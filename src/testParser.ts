@@ -21,6 +21,9 @@ function generateMockValue(typeKind: ts.SyntaxKind): any {
             return { message: "This is a mock object" };
         case ts.SyntaxKind.VoidKeyword:
             return undefined;
+
+// need some mina specific types
+
         default:
             // For complex types (interfaces, arrays, etc.), return a placeholder.
             console.warn(`[Warning] Unsupported type kind: ${ts.SyntaxKind[typeKind]}. Returning null.`);
@@ -80,7 +83,7 @@ async function analyseAndRunFunctions(zkAppFile: string) {
         // Check for `export const myArrowFunc = (...) => ...`
         const isExportedArrowFunc = ts.isVariableStatement(node) &&
             node.modifiers?.some(mod => mod.kind === ts.SyntaxKind.ExportKeyword) &&
-            node.declarationList.declarations.some(decl => ts.isArrowFunction(decl.initializer));
+            node.declarationList.declarations.some(decl => decl.initializer && ts.isArrowFunction(decl.initializer));
 
         if (isExportedFunction) {
             const functionName = node.name?.getText(sourceFile);
