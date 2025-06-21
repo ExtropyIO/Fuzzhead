@@ -75,6 +75,8 @@ async function analyseAndRunFunctions(sourceTsFile: string) {
     const checker = program.getTypeChecker();
     const targetModule = await import(`file://${absoluteJsPath}?v=${Date.now()}`);
 
+    
+// Generator for the Sudoku example
     const SudokuClass = targetModule.Sudoku;
     if (SudokuClass) {
         registerMockGenerator('Sudoku', () => {
@@ -83,6 +85,23 @@ async function analyseAndRunFunctions(sourceTsFile: string) {
         });
         console.log("   - Registered custom mock generator for type 'Sudoku'.");
     }
+
+
+    // 1. Get the custom `Player` class from the imported tictactoe module
+    const PlayerClass = targetModule.Player; // The name must match the exported class name
+
+    // 2. Register a generator for the 'Player' type
+    if (PlayerClass) {
+        registerMockGenerator('Player', () => {
+            // TODO: Fill in the logic to create a valid Player instance.
+            
+            const { PrivateKey } = require('o1js'); // You might need to import o1js types
+            const mockKey = PrivateKey.random().toPublicKey();
+            return new PlayerClass({ publicKey: mockKey});
+        });
+        console.log("   - Registered custom mock generator for type 'Player'.");
+    }
+
 
     const moduleSymbol = checker.getSymbolAtLocation(sourceFileForAst);
     if (!moduleSymbol) { return; }
