@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "paths": {
+    "/fuzz": {
+      "name": "/fuzz",
+      "lambdaFunction": "fuzzerfunction",
+      "permissions": {
+        "setting": "open"
+      }
+    }
+  }
+}
