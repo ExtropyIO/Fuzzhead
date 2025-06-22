@@ -50,7 +50,7 @@ async function executeFunction(name: string, func: (...args: any[]) => any, args
 }
 
 async function analyseAndRunFunctions(sourceTsFile: string) {
-    // All pathing and file loading logic is unchanged.
+
     const absoluteTsPath = path.resolve(sourceTsFile);
     if (!fs.existsSync(absoluteTsPath)) { console.error(`[Error] Source TypeScript file not found: ${absoluteTsPath}`); return; }
     const tsConfigPath = ts.findConfigFile(absoluteTsPath, ts.sys.fileExists, 'tsconfig.json');
@@ -88,7 +88,7 @@ async function analyseAndRunFunctions(sourceTsFile: string) {
 
 
     // 1. Get the custom `Player` class from the imported tictactoe module
-    const PlayerClass = targetModule.Player; // The name must match the exported class name
+    const PlayerClass = targetModule.Player; 
 
     // 2. Register a generator for the 'Player' type
     if (PlayerClass) {
