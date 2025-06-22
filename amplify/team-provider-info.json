@@ -21,7 +21,7 @@
       "function": {
         "fuzzerfunction": {
           "deploymentBucketName": "amplify-fuzzhead-dev-c2942-deployment",
-          "s3Key": "amplify-builds/fuzzerfunction-48704b32335a384d6a53-build.zip"
+          "s3Key": "amplify-builds/fuzzerfunction-6f315130744436346871-build.zip"
         }
       },
       "api": {
