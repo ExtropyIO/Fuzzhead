@@ -4,7 +4,7 @@
 import path from 'path';
 import ts from 'typescript';
 import fs from 'fs';
-import { PrivateKey } from 'o1js';
+import { PrivateKey, Field, Bool, UInt32, UInt64 } from 'o1js';
 import esbuild from 'esbuild-wasm'; // Use the WASM version
 
 // --- All helper functions are unchanged ---
@@ -13,6 +13,28 @@ const mockGeneratorRegistry = {};
 function registerMockGenerator(typeName, generator) { mockGeneratorRegistry[typeName] = generator; }
 function generateMockValue(typeKind, typeName) {
     if (mockGeneratorRegistry[typeName]) return mockGeneratorRegistry[typeName]();
+
+    // Handle array types like Field[] or Bool[]
+    if (typeName.endsWith('[]')) {
+        const baseType = typeName.slice(0, -2);
+        return Array.from({ length: 3 }, () => generateMockValue(typeKind, baseType));
+    }
+
+    switch (typeName) {
+        case 'Field':
+            return Field.random();
+        case 'Bool':
+            return Bool(Math.random() > 0.5);
+        case 'PublicKey':
+            return PrivateKey.random().toPublicKey();
+        case 'PrivateKey':
+            return PrivateKey.random();
+        case 'UInt32':
+            return UInt32.from(Math.floor(Math.random() * 1000));
+        case 'UInt64':
+            return UInt64.from(Math.floor(Math.random() * 1_000_000));
+    }
+
     switch (typeKind) {
         case 152: return Math.random().toString(36).substring(2, 7);
         case 148: return Math.floor(Math.random() * 1000);
@@ -42,12 +64,28 @@ async function analyseAndRun(sourceTsPath, bundledJsPath) {
     outputLogs.push(`   (Source: ${path.basename(sourceTsPath)})`);
     outputLogs.push('-'.repeat(50));
 
-    const program = ts.createProgram([sourceTsPath], {});
+    const program = ts.createProgram([sourceTsPath], {
+        experimentalDecorators: true,
+        emitDecoratorMetadata: true,
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+    });
     const sourceFileForAst = program.getSourceFile(sourceTsPath);
     if (!sourceFileForAst) { outputLogs.push("[Error] Could not get source file AST."); return; }
     const checker = program.getTypeChecker();
-    
-    const targetModule = await import(`file://${bundledJsPath}?v=${Date.now()}`);
+
+    let targetModule;
+    try {
+        const importUrl = `file://${bundledJsPath}?v=${Date.now()}`;
+        outputLogs.push(`Attempting to import: ${importUrl}`);
+        const imported = await import(importUrl);
+        targetModule = imported.default ?? imported;
+        outputLogs.push(`Imported module exports: ${Object.keys(targetModule).join(', ')}`);
+    } catch (importError) {
+        outputLogs.push(`❌ Failed to import bundled module: ${importError.message}`);
+        outputLogs.push(`Import error details: ${importError.stack}`);
+        return;
+    }
 
     if (targetModule.Sudoku) registerMockGenerator('Sudoku', () => targetModule.Sudoku.from(Array(9).fill(0).map(() => Array(9).fill(0))));
     if (targetModule.Player) registerMockGenerator('Player', () => new targetModule.Player({ publicKey: PrivateKey.random().toPublicKey() }));
@@ -56,38 +94,104 @@ async function analyseAndRun(sourceTsPath, bundledJsPath) {
     if (!moduleSymbol) { outputLogs.push("[Error] Could not find module symbol."); return; }
 
     const exports = checker.getExportsOfModule(moduleSymbol);
+    outputLogs.push(`Found ${exports.length} exports in the module.`);
+
+    // Keep track of classes we have already handled
+    const seenClasses = new Set();
+
     for (const exportSymbol of exports) {
         const resolvedSymbol = (exportSymbol.flags & ts.SymbolFlags.Alias) ? checker.getAliasedSymbol(exportSymbol) : exportSymbol;
         const declaration = resolvedSymbol.declarations?.[0];
-        if (!declaration) continue;
+        if (!declaration) {
+            outputLogs.push(`  - Export ${resolvedSymbol.name}: No declaration found`);
+            continue;
+        }
 
         if (ts.isClassDeclaration(declaration)) {
             const className = resolvedSymbol.name;
-            const isSmartContract = declaration.heritageClauses?.some(c => c.types.some(t => t.expression.getText(sourceFileForAst) === 'SmartContract')) ?? false;
+
+            // Skip duplicate aliases (e.g. default + named export)
+            if (seenClasses.has(className)) {
+                outputLogs.push(`  - Duplicate class export: ${className} (skipping)`);
+                continue;
+            }
+            seenClasses.add(className);
+            outputLogs.push(`  - Found class: ${className}`);
+
+            // Check for SmartContract inheritance
+            const heritageClauses = declaration.heritageClauses || [];
+            let isSmartContract = false;
+
+            for (const clause of heritageClauses) {
+                for (const type of clause.types) {
+                    const baseTypeName = type.expression.getText(sourceFileForAst);
+                    outputLogs.push(`    - Extends: ${baseTypeName}`);
+                    if (baseTypeName === 'SmartContract') {
+                        isSmartContract = true;
+                    }
+                }
+            }
 
             if (isSmartContract) {
                 outputLogs.push(`✅ Found SmartContract: ${className}`);
+                // Gather method info first
+                const methodInfos = declaration.members.filter(ts.isMethodDeclaration).map(m => {
+                    let decoratorsArr;
+                    if (ts.canHaveDecorators?.(m)) decoratorsArr = ts.getDecorators(m);
+                    else decoratorsArr = m.decorators;
+                    const decoratorNames = decoratorsArr?.map(d => d.expression.getText(sourceFileForAst)) || [];
+                    return { name: m.name.getText(sourceFileForAst), decoratorNames, node: m };
+                });
+
+                // Log all methods
+                methodInfos.forEach(info => {
+                    outputLogs.push(`   - Found method: ${info.name}`);
+                    if (info.decoratorNames.length > 0) {
+                        outputLogs.push(`     - Decorators: ${info.decoratorNames.join(', ')}`);
+                    }
+                });
+
+                // Try to instantiate for execution
                 let instance;
                 try {
                     instance = new targetModule[className]();
                     outputLogs.push(`   - Instantiated ${className} successfully.`);
                 } catch (e) {
-                    outputLogs.push(`   - ❌ Failed to instantiate ${className}: ${e.message}`);
-                    continue; 
+                    outputLogs.push(`   - ⚠️ Could not instantiate ${className}: ${e.message}`);
                 }
-                
-                for (const member of declaration.members) {
-                    if (ts.isMethodDeclaration(member)) {
-                        const hasMethodDecorator = ts.canHaveDecorators(member) && ts.getDecorators(member)?.some(d => d.expression.getText(sourceFileForAst).startsWith('method'));
-                        if (hasMethodDecorator) {
-                            const methodName = member.name.getText(sourceFileForAst);
-                            const mockArgs = member.parameters.map(p => generateMockValue(p.type?.kind ?? 131, p.type?.getText(sourceFileForAst) || ''));
-                            await executeFunction(`${className}.${methodName}`, instance[methodName].bind(instance), mockArgs);
-                        }
+
+                // Execute @method-decorated functions if we have an instance
+                if (instance) {
+                    // Determine which methods to execute
+                    let executeList = methodInfos.filter(i => i.decoratorNames.some(n => n.includes('method')));
+                    if (executeList.length === 0) {
+                        // No decorators found – fall back to every method
+                        executeList = methodInfos;
+                        outputLogs.push(`   - No @method decorators detected; defaulting to all ${executeList.length} methods`);
+                    }
+
+                    for (const info of executeList) {
+                        const mockArgs = info.node.parameters.map(p => {
+                            const tName = p.type?.getText(sourceFileForAst) || '';
+                            const val = generateMockValue(p.type?.kind ?? 131, tName);
+                            if (val === null) {
+                                outputLogs.push(`     - Cannot generate mock for param type '${tName}'`);
+                            }
+                            return val;
+                        });
+                        await executeFunction(`${className}.${info.name}`, instance[info.name].bind(instance), mockArgs);
                     }
                 }
+            } else {
+                outputLogs.push(`   - Not a SmartContract (doesn't extend SmartContract)`);
             }
+        } else {
+            outputLogs.push(`  - Export ${resolvedSymbol.name}: Not a class (${declaration.kind})`);
         }
+    }
+
+    if (exports.length === 0) {
+        outputLogs.push("No exports found in the module. Make sure your SmartContract is exported.");
     }
 }
 
@@ -97,26 +201,31 @@ export const handler = async (event) => {
     try {
         const body = JSON.parse(event.body);
         const userCode = body.code;
-        
+
         const targetFileName = 'fuzz-target.ts';
         const compiledFileName = 'fuzz-target.js';
-        const bundleFileName = 'fuzz-bundle.js';
+        const bundleFileName = 'fuzz-bundle.mjs';
 
         const targetTsPath = path.join('/tmp', targetFileName);
         const compiledJsPath = path.join('/tmp', compiledFileName);
         const bundlePath = path.join('/tmp', bundleFileName);
 
         fs.writeFileSync(targetTsPath, userCode);
-        
+
         const program = ts.createProgram([targetTsPath], {
+            experimentalDecorators: true,
+            emitDecoratorMetadata: true,
+            useDefineForClassFields: false,
             outDir: '/tmp',
             target: ts.ScriptTarget.ES2022,
             module: ts.ModuleKind.ESNext,
             esModuleInterop: true,
+            allowSyntheticDefaultImports: true,
+            moduleResolution: ts.ModuleResolutionKind.NodeJs,
         });
         const emitResult = program.emit();
         if (emitResult.emitSkipped) throw new Error("TypeScript compilation failed.");
-        
+
         // --- THIS IS THE FIX ---
         // Read our function's own package.json to find its dependencies.
         const pkgJsonPath = path.join(process.cwd(), 'package.json');
@@ -130,11 +239,33 @@ export const handler = async (event) => {
             outfile: bundlePath,
             format: 'esm',
             platform: 'node',
+            target: 'es2022',
             // Pass the list of external dependencies here.
-            external: [...externalDeps, 'o1js-unsafe-bindings'], 
+            external: [...externalDeps, 'o1js-unsafe-bindings'],
         });
         outputLogs.push("Compilation and bundling successful.");
-        
+
+        // Ensure /tmp/node_modules points to our function's node_modules so that imports resolve correctly
+        try {
+            const tmpNodeModules = path.join('/tmp', 'node_modules');
+            const funcNodeModules = path.join(process.cwd(), 'node_modules');
+            if (!fs.existsSync(tmpNodeModules)) {
+                fs.symlinkSync(funcNodeModules, tmpNodeModules, 'dir');
+                outputLogs.push(`Created symlink: ${tmpNodeModules} -> ${funcNodeModules}`);
+            }
+        } catch (symlinkErr) {
+            outputLogs.push(`Could not create node_modules symlink: ${symlinkErr.message}`);
+        }
+
+        // Debug: Show the first few lines of the bundled file
+        try {
+            const bundleContent = fs.readFileSync(bundlePath, 'utf-8');
+            const firstLines = bundleContent.split('\n').slice(0, 5).join('\n');
+            outputLogs.push(`Bundle preview (first 5 lines):\n${firstLines}`);
+        } catch (e) {
+            outputLogs.push(`Could not read bundle file: ${e.message}`);
+        }
+
         // Run the fuzzer on the BUNDLED file
         await analyseAndRun(targetTsPath, bundlePath);
 
