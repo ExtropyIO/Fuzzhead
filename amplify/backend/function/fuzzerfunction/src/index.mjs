@@ -4,7 +4,7 @@
 import path from 'path';
 import ts from 'typescript';
 import fs from 'fs';
-import { PrivateKey, Field, Bool, UInt32, UInt64 } from 'o1js';
+import { PrivateKey, Field, Bool, UInt32, UInt64, Mina, AccountUpdate } from 'o1js';
 import esbuild from 'esbuild-wasm'; // Use the WASM version
 
 // --- All helper functions are unchanged ---
@@ -13,7 +13,6 @@ const mockGeneratorRegistry = {};
 function registerMockGenerator(typeName, generator) { mockGeneratorRegistry[typeName] = generator; }
 function generateMockValue(typeKind, typeName) {
     if (mockGeneratorRegistry[typeName]) return mockGeneratorRegistry[typeName]();
-
     // Handle array types like Field[] or Bool[]
     if (typeName.endsWith('[]')) {
         const baseType = typeName.slice(0, -2);
@@ -42,19 +41,28 @@ function generateMockValue(typeKind, typeName) {
         default: return null;
     }
 }
-async function executeFunction(name, func, args) {
+
+async function executeContractMethod(name, instance, methodName, args, sender, senderKey) {
     if (args.includes(null)) { outputLogs.push(`  -> Skipping ${name}(...) due to unsupported parameter types.`); return; }
     const argsString = args.map(arg => (typeof arg === 'object' && arg !== null && !Array.isArray(arg)) ? `{...${arg.constructor.name}}` : JSON.stringify(arg)).join(', ');
     let logLine = `  -> Calling ${name}(${argsString})... `;
     try {
-        const result = await func(...args);
+        const method = instance[methodName];
+        const txn = await Mina.transaction(sender, () => {
+            method.apply(instance, args);
+        });
+        await txn.prove();
+        await txn.sign([senderKey]).send();
+
         logLine += `✅ Success`;
         outputLogs.push(logLine);
-        if (result !== undefined) outputLogs.push(`     Output: ${JSON.stringify(result)}`);
     } catch (e) {
         logLine += `❌ Error`;
         outputLogs.push(logLine);
         outputLogs.push(`     Message: ${e.message}`);
+        if (e.stack) {
+            outputLogs.push(`     Stack: ${e.stack}`);
+        }
     }
 }
 
@@ -134,7 +142,38 @@ async function analyseAndRun(sourceTsPath, bundledJsPath) {
 
             if (isSmartContract) {
                 outputLogs.push(`✅ Found SmartContract: ${className}`);
-                // Gather method info first
+                const ZkappClass = targetModule[className];
+                let instance;
+                let isDeployed = false;
+                let Local;
+
+                try {
+                    outputLogs.push(`- Compiling ${className}...`);
+                    await ZkappClass.compile();
+                    outputLogs.push(`- Compilation successful.`);
+                } catch (e) {
+                    outputLogs.push(`- ⚠️ Could not compile ${className}: ${e.message}`);
+                    if (e.stack) outputLogs.push(e.stack);
+                    return;
+                }
+
+                try {
+                    outputLogs.push(`- Setting up local Mina instance.`);
+                    Local = await Mina.LocalBlockchain({ proofsEnabled: false });
+                    Mina.setActiveInstance(Local);
+                } catch (e) {
+                    outputLogs.push(`- ⚠️ Could not set up local Mina instance: ${e.message}`);
+                    if (e.stack) outputLogs.push(e.stack);
+                    return;
+                }
+
+                const deployer = Local.testAccounts[0];
+                const deployerAccount = deployer.publicKey;
+                const deployerKey = deployer.privateKey;
+                const zkAppPrivateKey = PrivateKey.random();
+                const zkAppAddress = zkAppPrivateKey.toPublicKey();
+                outputLogs.push(`- Network and accounts configured.`);
+
                 const methodInfos = declaration.members.filter(ts.isMethodDeclaration).map(m => {
                     let decoratorsArr;
                     if (ts.canHaveDecorators?.(m)) decoratorsArr = ts.getDecorators(m);
@@ -142,33 +181,59 @@ async function analyseAndRun(sourceTsPath, bundledJsPath) {
                     const decoratorNames = decoratorsArr?.map(d => d.expression.getText(sourceFileForAst)) || [];
                     return { name: m.name.getText(sourceFileForAst), decoratorNames, node: m };
                 });
+                outputLogs.push('-'.repeat(50));
 
-                // Log all methods
-                methodInfos.forEach(info => {
-                    outputLogs.push(`   - Found method: ${info.name}`);
-                    if (info.decoratorNames.length > 0) {
-                        outputLogs.push(`     - Decorators: ${info.decoratorNames.join(', ')}`);
-                    }
-                });
-
-                // Try to instantiate for execution
-                let instance;
                 try {
-                    instance = new targetModule[className]();
-                    outputLogs.push(`   - Instantiated ${className} successfully.`);
+                    instance = new ZkappClass(zkAppAddress);
+                    outputLogs.push(`- Instantiated ${className} successfully.`);
+
+                    const initMethodInfo = methodInfos.find(m => m.name === 'init');
+
+                    const txn = await Mina.transaction(deployerAccount, () => {
+                        AccountUpdate.fundNewAccount(deployerAccount);
+                        instance.deploy();
+
+                        if (initMethodInfo) {
+                            outputLogs.push(`   - Found 'init' method. Calling it during deployment.`);
+                            const mockArgs = initMethodInfo.node.parameters.map(p => {
+                                const tName = p.type?.getText(sourceFileForAst) || '';
+                                const val = generateMockValue(p.type?.kind ?? 131, tName);
+                                if (val === null) {
+                                    outputLogs.push(`     - Cannot generate mock for 'init' param type '${tName}'`);
+                                }
+                                return val;
+                            });
+
+                            if (!mockArgs.includes(null)) {
+                                instance.init.apply(instance, mockArgs);
+                            } else {
+                                outputLogs.push(`   - Skipping 'init' call due to un-mockable parameters.`);
+                            }
+                        }
+                    });
+
+                    await txn.prove();
+                    await txn.sign([deployerKey, zkAppPrivateKey]).send();
+                    isDeployed = true;
+                    outputLogs.push(`- Deployed ${className} to local Mina instance.`);
                 } catch (e) {
-                    outputLogs.push(`   - ⚠️ Could not instantiate ${className}: ${e.message}`);
+                    outputLogs.push(`- ⚠️ Could not instantiate or deploy ${className}: ${e.message}`);
+                    if (e.stack) outputLogs.push(e.stack);
                 }
 
-                // Execute @method-decorated functions if we have an instance
-                if (instance) {
-                    // Determine which methods to execute
+
+                if (instance && isDeployed) {
                     let executeList = methodInfos.filter(i => i.decoratorNames.some(n => n.includes('method')));
+                    executeList = executeList.filter(i => i.name !== 'init');
+
                     if (executeList.length === 0) {
-                        // No decorators found – fall back to every method
-                        executeList = methodInfos;
-                        outputLogs.push(`   - No @method decorators detected; defaulting to all ${executeList.length} methods`);
+                        outputLogs.push(`   - No @method-decorated methods found to execute (excluding 'init').`);
+                    } else {
+                        outputLogs.push(`   - Found ${executeList.length} @method-decorated methods to execute.`);
                     }
+
+                    const sender = Local.testAccounts[1];
+
 
                     for (const info of executeList) {
                         const mockArgs = info.node.parameters.map(p => {
@@ -179,7 +244,7 @@ async function analyseAndRun(sourceTsPath, bundledJsPath) {
                             }
                             return val;
                         });
-                        await executeFunction(`${className}.${info.name}`, instance[info.name].bind(instance), mockArgs);
+                        await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey);
                     }
                 }
             } else {
@@ -258,13 +323,13 @@ export const handler = async (event) => {
         }
 
         // Debug: Show the first few lines of the bundled file
-        try {
-            const bundleContent = fs.readFileSync(bundlePath, 'utf-8');
-            const firstLines = bundleContent.split('\n').slice(0, 5).join('\n');
-            outputLogs.push(`Bundle preview (first 5 lines):\n${firstLines}`);
-        } catch (e) {
-            outputLogs.push(`Could not read bundle file: ${e.message}`);
-        }
+        // try {
+        //     const bundleContent = fs.readFileSync(bundlePath, 'utf-8');
+        //     const firstLines = bundleContent.split('\n').slice(0, 5).join('\n');
+        //     outputLogs.push(`Bundle preview (first 5 lines):\n${firstLines}`);
+        // } catch (e) {
+        //     outputLogs.push(`Could not read bundle file: ${e.message}`);
+        // }
 
         // Run the fuzzer on the BUNDLED file
         await analyseAndRun(targetTsPath, bundlePath);
