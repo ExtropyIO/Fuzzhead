@@ -167,6 +167,8 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                 // 1) Deploy in its own transaction
                 const deployTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
                     instance.deploy({ zkappKey: zkAppPrivateKey });
+                    // Set verification key from compiled contract
+                    instance.account.verificationKey.set(ZkappClass._verificationKey);
                 });
                 if (proofsEnabled) await deployTxn.prove?.();
                 outputLogs.push(`- Signing deploy txn with keys: feePayer=${!!deployerKey}, zkKey=${!!zkAppPrivateKey}`);
