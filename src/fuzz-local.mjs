@@ -12,30 +12,61 @@ let outputLogs = [];
 // Mock generators
 const mockGeneratorRegistry = {};
 function registerMockGenerator(typeName, generator) { mockGeneratorRegistry[typeName] = generator; }
-function generateMockValue(typeKind, typeName) {
-    if (mockGeneratorRegistry[typeName]) return mockGeneratorRegistry[typeName]();
-    if (typeName.endsWith('[]')) {
-        const baseType = typeName.slice(0, -2);
-        return Array.from({ length: 3 }, () => generateMockValue(typeKind, baseType));
-    }
+
+// Standard types that work everywhere
+const SUPPORTED_TYPES = [
+    'Field', 'Bool', 'UInt32', 'UInt64', 'UInt8',
+    'PublicKey', 'PrivateKey', 'Signature',
+    'Group', 'Scalar', 'string', 'number', 'boolean'
+];
+
+function generateStandardType(typeName) {
     switch (typeName) {
-        case 'Field': return Field.random();
-        case 'Bool': return Bool(Math.random() > 0.5);
-        case 'PublicKey': return PrivateKey.random().toPublicKey();
-        case 'PrivateKey': return PrivateKey.random();
-        case 'UInt32': return UInt32.from(Math.floor(Math.random() * 1000));
-        case 'UInt64': return UInt64.from(Math.floor(Math.random() * 1_000_000));
-    }
-    switch (typeKind) {
-        case 152: return Math.random().toString(36).substring(2, 7); // string
-        case 148: return Math.floor(Math.random() * 1000); // number
-        case 136: return Math.random() > 0.5; // boolean
-        default: return null;
+        case 'Field':
+            return Field.random();
+        case 'Bool':
+            return Bool(Math.random() > 0.5);
+        case 'PublicKey':
+            return PrivateKey.random().toPublicKey();
+        case 'PrivateKey':
+            return PrivateKey.random();
+        case 'UInt32':
+            return UInt32.from(Math.floor(Math.random() * 1000));
+        case 'UInt64':
+            return UInt64.from(Math.floor(Math.random() * 1_000_000));
+        case 'UInt8':
+            return UInt8.from(Math.floor(Math.random() * 256));
+        case 'string':
+            return Math.random().toString(36).substring(2, 7);
+        case 'number':
+            return Math.floor(Math.random() * 1000);
+        case 'boolean':
+            return Math.random() > 0.5;
+        default:
+            return null;
     }
 }
 
+function generateMockValue(typeKind, typeName) {
+    // Handle arrays of supported types
+    if (typeName.endsWith('[]')) {
+        const baseType = typeName.slice(0, -2);
+        if (SUPPORTED_TYPES.includes(baseType)) {
+            return Array.from({ length: 3 }, () => generateMockValue(typeKind, baseType));
+        }
+        return null; // Unsupported array type
+    }
+
+    // Standard o1js types
+    if (SUPPORTED_TYPES.includes(typeName)) {
+        return generateStandardType(typeName);
+    }
+
+    // Custom/unknown type
+    return null; // Signal: "can't generate this"
+}
+
 async function executeContractMethod(name, instance, methodName, args, sender, senderKey, proofsEnabled, zkAppPrivateKey) {
-    if (args.includes(null)) { outputLogs.push(`  -> Skipping ${name}(...) (unsupported param types)`); return; }
     const argsString = args.map(a => (typeof a === 'object' && a !== null && !Array.isArray(a)) ? `{...${a.constructor.name}}` : JSON.stringify(a)).join(', ');
     let line = `  -> Calling ${name}(${argsString})... `;
     try {
@@ -199,15 +230,35 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
 
                 // Execute @method-decorated (excluding init)
                 let executeList = methodInfos.filter(i => i.decoratorNames.some(n => n.includes('method'))).filter(i => i.name !== 'init');
-                if (executeList.length === 0) outputLogs.push(`   - No @method methods found to execute (excluding 'init').`);
 
-                const sender = Local.testAccounts[1];
-                for (const info of executeList) {
-                    const mockArgs = info.node.parameters.map(p => {
-                        const tName = p.type?.getText(sourceFileForAst) || '';
-                        return generateMockValue(p.type?.kind ?? 131, tName);
-                    });
-                    await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
+                if (executeList.length === 0) {
+                    outputLogs.push(`   - No @method methods found to execute (excluding 'init').`);
+                } else {
+                    const sender = Local.testAccounts[1];
+                    let executedCount = 0;
+                    let skippedCount = 0;
+
+                    for (const info of executeList) {
+                        const mockArgs = info.node.parameters.map(p => {
+                            const tName = p.type?.getText(sourceFileForAst) || '';
+                            return generateMockValue(p.type?.kind ?? 131, tName);
+                        });
+
+                        if (mockArgs.includes(null)) {
+                            skippedCount++;
+                            outputLogs.push(`  -> Skipping ${className}.${info.name}(...) due to unsupported parameter types`);
+                        } else {
+                            executedCount++;
+                            await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
+                        }
+                    }
+
+                    // Summary message
+                    if (skippedCount === executeList.length) {
+                        outputLogs.push(`\n🏁 Fuzzing complete - all ${skippedCount} methods skipped due to unsupported parameter types.`);
+                    } else {
+                        outputLogs.push(`\n🏁 Fuzzing complete - executed ${executedCount} methods, skipped ${skippedCount} methods.`);
+                    }
                 }
             } catch (e) {
                 outputLogs.push(`- Error during local run: ${e.message}`);
