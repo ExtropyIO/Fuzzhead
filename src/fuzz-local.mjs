@@ -79,9 +79,11 @@ async function executeContractMethod(name, instance, methodName, args, sender, s
         const keys = proofsEnabled ? [senderKey] : [senderKey, zkAppPrivateKey].filter(Boolean);
         await txn.sign(keys).send();
         outputLogs.push(line + '✅ Success');
+        return 'passed';
     } catch (e) {
         outputLogs.push(line + '❌ Error');
         outputLogs.push(`     Message: ${e.message}`);
+        return 'failed';
     }
 }
 
@@ -235,7 +237,8 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                     outputLogs.push(`   - No @method methods found to execute (excluding 'init').`);
                 } else {
                     const sender = Local.testAccounts[1];
-                    let executedCount = 0;
+                    let passedCount = 0;
+                    let failedCount = 0;
                     let skippedCount = 0;
 
                     for (const info of executeList) {
@@ -248,17 +251,24 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                             skippedCount++;
                             outputLogs.push(`  -> Skipping ${className}.${info.name}(...) due to unsupported parameter types`);
                         } else {
-                            executedCount++;
-                            await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
+                            const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
+                            if (result === 'passed') {
+                                passedCount++;
+                            } else {
+                                failedCount++;
+                            }
                         }
                     }
 
-                    // Summary message
-                    if (skippedCount === executeList.length) {
-                        outputLogs.push(`\n🏁 Fuzzing complete - all ${skippedCount} methods skipped due to unsupported parameter types.`);
-                    } else {
-                        outputLogs.push(`\n🏁 Fuzzing complete - executed ${executedCount} methods, skipped ${skippedCount} methods.`);
+                    // Enhanced summary message
+                    const totalTested = passedCount + failedCount;
+                    outputLogs.push(`\n🏁 Fuzzing complete:`);
+                    outputLogs.push(`   ✅ ${passedCount} method(s) passed`);
+                    outputLogs.push(`   ❌ ${failedCount} method(s) failed`);
+                    if (skippedCount > 0) {
+                        outputLogs.push(`   ⏭️  ${skippedCount} method(s) skipped`);
                     }
+                    outputLogs.push(`   📊 Total: ${totalTested} method(s) tested`);
                 }
             } catch (e) {
                 outputLogs.push(`- Error during local run: ${e.message}`);

@@ -1,5 +1,5 @@
 // .fuzz/compiled.js
-import { Field, SmartContract, method, Bool, state, State, Poseidon, Struct, Provable } from "o1js";
+import { Field, PrivateKey, Provable, SmartContract, State, assert, method, state } from "o1js";
 var __decorate = function(decorators, target, key, desc) {
   var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
   if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -9,103 +9,45 @@ var __decorate = function(decorators, target, key, desc) {
 var __metadata = function(k, v) {
   if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var Sudoku = class _Sudoku extends Struct({
-  value: Provable.Array(Provable.Array(Field, 9), 9)
-}) {
-  static from(value) {
-    return new _Sudoku({ value: value.map((row) => row.map(Field)) });
-  }
-  hash() {
-    return Poseidon.hash(_Sudoku.toFields(this));
-  }
-};
-var SudokuZkApp = class extends SmartContract {
+var _a;
+var _b;
+var adminPrivateKey = PrivateKey.fromBase58("EKFcef5HKXAn7V2rQntLiXtJr15dkxrsrQ1G4pnYemhMEAWYbkZW");
+var adminPublicKey = adminPrivateKey.toPublicKey();
+var HelloWorld = class extends SmartContract {
   constructor() {
     super(...arguments);
-    this.sudokuHash = State();
-    this.isSolved = State();
+    this.x = State();
   }
-  /**
-   * by making this a `@method`, we ensure that a proof is created for the state initialization.
-   * alternatively (and, more efficiently), we could have used `super.init()` inside `update()` below,
-   * to ensure the entire state is overwritten.
-   * however, it's good to have an example which tests the CLI's ability to handle init() decorated with `@method`.
-   */
-  async init() {
+  init() {
     super.init();
+    this.x.set(Field(2));
+    this.account.delegate.set(adminPublicKey);
   }
-  async update(sudokuInstance) {
-    this.sudokuHash.set(sudokuInstance.hash());
-    this.isSolved.set(Bool(false));
-  }
-  async submitSolution(sudokuInstance, solutionInstance) {
-    let sudoku = sudokuInstance.value;
-    let solution = solutionInstance.value;
-    let range9 = Array.from({ length: 9 }, (_, i) => i);
-    let oneTo9 = range9.map((i) => Field(i + 1));
-    function assertHas1To9(array) {
-      oneTo9.map((k) => range9.map((i) => array[i].equals(k)).reduce(Bool.or)).reduce(Bool.and).assertTrue("array contains the numbers 1...9");
-    }
-    for (let i = 0; i < 9; i++) {
-      let row = solution[i];
-      assertHas1To9(row);
-    }
-    for (let j = 0; j < 9; j++) {
-      let column = solution.map((row) => row[j]);
-      assertHas1To9(column);
-    }
-    for (let k = 0; k < 9; k++) {
-      let [i0, j0] = divmod(k, 3);
-      let square = range9.map((m) => {
-        let [i1, j1] = divmod(m, 3);
-        return solution[3 * i0 + i1][3 * j0 + j1];
-      });
-      assertHas1To9(square);
-    }
-    for (let i = 0; i < 9; i++) {
-      for (let j = 0; j < 9; j++) {
-        let cell = sudoku[i][j];
-        let solutionCell = solution[i][j];
-        Bool.or(cell.equals(0), cell.equals(solutionCell)).assertTrue(`solution cell (${i + 1},${j + 1}) matches the original sudoku`);
-      }
-    }
-    let sudokuHash = this.sudokuHash.get();
-    this.sudokuHash.requireEquals(sudokuHash);
-    sudokuInstance.hash().assertEquals(sudokuHash, "sudoku matches the one committed on-chain");
-    this.isSolved.set(Bool(true));
+  async update(squared, admin) {
+    const x = await Provable.witnessAsync(Field, async () => {
+      let x2 = await this.x.fetch();
+      assert(x2 !== void 0, "x can be fetched");
+      return x2;
+    });
+    this.x.requireNothing();
+    x.square().assertEquals(squared);
+    this.x.set(squared);
+    const adminPk = admin.toPublicKey();
+    this.account.delegate.requireEquals(adminPk);
   }
 };
 __decorate([
   state(Field),
   __metadata("design:type", Object)
-], SudokuZkApp.prototype, "sudokuHash", void 0);
-__decorate([
-  state(Bool),
-  __metadata("design:type", Object)
-], SudokuZkApp.prototype, "isSolved", void 0);
+], HelloWorld.prototype, "x", void 0);
 __decorate([
   method,
   __metadata("design:type", Function),
-  __metadata("design:paramtypes", []),
+  __metadata("design:paramtypes", [typeof (_a = typeof Field !== "undefined" && Field) === "function" ? _a : Object, typeof (_b = typeof PrivateKey !== "undefined" && PrivateKey) === "function" ? _b : Object]),
   __metadata("design:returntype", Promise)
-], SudokuZkApp.prototype, "init", null);
-__decorate([
-  method,
-  __metadata("design:type", Function),
-  __metadata("design:paramtypes", [Sudoku]),
-  __metadata("design:returntype", Promise)
-], SudokuZkApp.prototype, "update", null);
-__decorate([
-  method,
-  __metadata("design:type", Function),
-  __metadata("design:paramtypes", [Sudoku, Sudoku]),
-  __metadata("design:returntype", Promise)
-], SudokuZkApp.prototype, "submitSolution", null);
-function divmod(k, n) {
-  let q = Math.floor(k / n);
-  return [q, k - q * n];
-}
+], HelloWorld.prototype, "update", null);
 export {
-  Sudoku,
-  SudokuZkApp
+  HelloWorld,
+  adminPrivateKey,
+  adminPublicKey
 };
