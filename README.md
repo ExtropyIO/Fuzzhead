@@ -10,7 +10,6 @@ A comprehensive fuzzing tool for testing Mina blockchain smart contracts built w
 - **Smart Type Generation** - Generates valid mock data for standard o1js types (`Field`, `Bool`, `UInt32`, `PublicKey`, etc.)
 - **Flexible Testing Modes** - Supports both proof-enabled and proof-disabled testing
 - **Detailed Reporting** - Clear pass/fail/skip statistics with actionable error messages
-- **Lambda Integration** - Can run locally or deploy to AWS Lambda for scalable testing
 
 ## 🚀 Quick Start
 
@@ -110,9 +109,6 @@ COMPILE=0 node src/fuzz-local.mjs contracts/MyContract.ts
 Fuzzhead/
 ├── src/
 │   ├── fuzz-local.mjs          # Local fuzzing runner
-│   └── lambda-handler.mjs      # AWS Lambda handler
-├── amplify/                    # AWS Amplify configuration
-│   └── backend/function/fuzzerfunction/
 ├── test-contracts/             # Example contracts for testing
 │   ├── hello-world.ts
 │   ├── sudoku.ts
