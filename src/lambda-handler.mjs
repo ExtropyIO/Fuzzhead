@@ -59,49 +59,26 @@ async function executeFunction(name, func, args) {
 
 // --- Main Fuzzer Logic (Refactored for Lambda) ---
 
-async function analyseAndRun(sourceTsPath, compiledJsPath) {
-    // This function no longer needs to find paths, it receives them directly.
-    outputLogs.push(`\nFuzzing file: ${path.basename(compiledJsPath)}`);
+async function analyseAndRun(sourceTsPath, bundledJsPath) {
+    outputLogs.push(`\nFuzzing file: ${path.basename(bundledJsPath)}`);
     outputLogs.push(`   (Source: ${path.basename(sourceTsPath)})`);
     outputLogs.push('-'.repeat(50));
-    
+
     const program = ts.createProgram([sourceTsPath], {});
     const sourceFileForAst = program.getSourceFile(sourceTsPath);
-    if (!sourceFileForAst) { 
-        outputLogs.push("[Error] Could not get source file AST.");
-        return; 
-    }
+    if (!sourceFileForAst) { outputLogs.push("[Error] Could not get source file AST."); return; }
     const checker = program.getTypeChecker();
     
-    // Dynamically import the user's code that we just compiled
-    const targetModule = await import(`file://${compiledJsPath}?v=${Date.now()}`);
+    const targetModule = await import(`file://${bundledJsPath}?v=${Date.now()}`);
 
-    // Register custom mock generators using the imported module
-    const SudokuClass = targetModule.Sudoku;
-    if (SudokuClass) {
-        registerMockGenerator('Sudoku', () => {
-            const emptyBoard = Array(9).fill(0).map(() => Array(9).fill(0));
-            return SudokuClass.from(emptyBoard);
-        });
-        outputLogs.push("   - Registered custom mock generator for type 'Sudoku'.");
-    }
+    // Debug: Log what's in the module
+    outputLogs.push(`   - Available exports: ${Object.keys(targetModule).join(', ')}`);
 
-    const PlayerClass = targetModule.Player; 
-    if (PlayerClass) {
-        registerMockGenerator('Player', () => {
-            const mockKey = PrivateKey.random().toPublicKey();
-            // This assumes a simple constructor. Adjust as needed.
-            return new PlayerClass({ publicKey: mockKey });
-        });
-        outputLogs.push("   - Registered custom mock generator for type 'Player'.");
-    }
+    if (targetModule.Sudoku) registerMockGenerator('Sudoku', () => targetModule.Sudoku.from(Array(9).fill(0).map(() => Array(9).fill(0))));
+    if (targetModule.Player) registerMockGenerator('Player', () => new targetModule.Player({ publicKey: PrivateKey.random().toPublicKey() }));
 
-    // Main discovery and execution loop
     const moduleSymbol = checker.getSymbolAtLocation(sourceFileForAst);
-    if (!moduleSymbol) { 
-        outputLogs.push("[Error] Could not find module symbol.");
-        return;
-    }
+    if (!moduleSymbol) { outputLogs.push("[Error] Could not find module symbol."); return; }
 
     const exports = checker.getExportsOfModule(moduleSymbol);
     for (const exportSymbol of exports) {
@@ -117,8 +94,22 @@ async function analyseAndRun(sourceTsPath, compiledJsPath) {
                 outputLogs.push(`✅ Found SmartContract: ${className}`);
                 let instance;
                 try {
-                    const ClassToRun = targetModule[className];
-                    instance = new ClassToRun();
+                    // Try different ways to get the constructor
+                    let ClassConstructor = targetModule[className];
+                    
+                    // If it's not a constructor, try default export
+                    if (typeof ClassConstructor !== 'function') {
+                        ClassConstructor = targetModule.default;
+                        outputLogs.push(`   - Trying default export for ${className}`);
+                    }
+                    
+                    // If still not a constructor, try to find it in the module
+                    if (typeof ClassConstructor !== 'function') {
+                        outputLogs.push(`   - Class ${className} not found as constructor. Available: ${Object.keys(targetModule).join(', ')}`);
+                        continue;
+                    }
+                    
+                    instance = new ClassConstructor();
                     outputLogs.push(`   - Instantiated ${className} successfully.`);
                 } catch (e) {
                     outputLogs.push(`   - ❌ Failed to instantiate ${className}: ${e.message}`);
@@ -130,11 +121,7 @@ async function analyseAndRun(sourceTsPath, compiledJsPath) {
                         const hasMethodDecorator = ts.canHaveDecorators(member) && ts.getDecorators(member)?.some(d => d.expression.getText(sourceFileForAst).startsWith('method'));
                         if (hasMethodDecorator) {
                             const methodName = member.name.getText(sourceFileForAst);
-                            const mockArgs = member.parameters.map(p => {
-                                const typeKind = p.type?.kind ?? 131; // AnyKeyword
-                                const typeName = p.type?.getText(sourceFileForAst) || '';
-                                return generateMockValue(typeKind, typeName);
-                            });
+                            const mockArgs = member.parameters.map(p => generateMockValue(p.type?.kind ?? 131, p.type?.getText(sourceFileForAst) || ''));
                             await executeFunction(`${className}.${methodName}`, instance[methodName].bind(instance), mockArgs);
                         }
                     }
