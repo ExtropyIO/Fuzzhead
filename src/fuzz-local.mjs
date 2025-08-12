@@ -88,8 +88,7 @@ async function executeContractMethod(name, instance, methodName, args, sender, s
 }
 
 async function analyseAndRun(sourceTsPath, bundlePath) {
-    outputLogs.push(`\nFuzzing file: ${path.basename(bundlePath)}`);
-    outputLogs.push(`   (Source: ${path.basename(sourceTsPath)})`);
+    outputLogs.push(`\nFuzzing file: ${path.basename(sourceTsPath)}`);
     outputLogs.push('-'.repeat(50));
 
     // AST for methods/decorators
@@ -106,15 +105,11 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
     // Import bundled module
     const mod = await import(`file://${bundlePath}?v=${Date.now()}`);
     const targetModule = mod.default ?? mod;
-    outputLogs.push(`Imported module exports: ${Object.keys(targetModule).join(', ')}`);
-
-    // Optional custom mocks
-    if (targetModule.Sudoku) registerMockGenerator('Sudoku', () => targetModule.Sudoku.from(Array(9).fill(0).map(() => Array(9).fill(0))));
 
     const moduleSymbol = checker.getSymbolAtLocation(sourceFileForAst);
     if (!moduleSymbol) { outputLogs.push('[Error] Could not find module symbol.'); return; }
     const exports = checker.getExportsOfModule(moduleSymbol);
-    outputLogs.push(`Found ${exports.length} exports in the module.`);
+    outputLogs.push(`Found ${exports.length} exports in the module: ${Object.keys(targetModule).join(', ')}`);
 
     for (const exportSymbol of exports) {
         const resolvedSymbol = (exportSymbol.flags & ts.SymbolFlags.Alias) ? checker.getAliasedSymbol(exportSymbol) : exportSymbol;
@@ -123,7 +118,6 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
 
         if (ts.isClassDeclaration(declaration)) {
             const className = resolvedSymbol.name;
-            outputLogs.push(`  - Found class: ${className}`);
 
             // runtime check: extends SmartContract?
             const ZkappClass = targetModule[className];
