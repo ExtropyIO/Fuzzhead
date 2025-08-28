@@ -332,15 +332,30 @@ async function main() {
     });
     fs.writeFileSync(compiledJsPath, transpiled.outputText);
 
-    await esbuild.build({
-        entryPoints: [compiledJsPath],
-        bundle: true,
-        outfile: bundlePath,
-        format: 'esm',
-        platform: 'node',
-        target: 'es2022',
-        external
-    });
+    try {
+        await esbuild.build({
+            entryPoints: [compiledJsPath],
+            bundle: true,
+            outfile: bundlePath,
+            format: 'esm',
+            platform: 'node',
+            target: 'es2022',
+            external
+        });
+    } catch (buildError) {
+        // Check if the error is related to module resolution
+        if (buildError.message && buildError.message.includes('Could not resolve')) {
+            console.error('\n🚨 ESBuild Resolution Error Detected!🚨\n');
+            console.error('\n💡 Recommended Solution:');
+            console.error('To continue fuzzing, temporarily comment out local file imports in your TypeScript file.');
+            console.error('After commenting out the imports, run the fuzzer again.');
+            console.error('Note: This will limit fuzzing to methods that don\'t depend on these imports.');
+            process.exit(1);
+        } else {
+            // Re-throw other build errors
+            throw buildError;
+        }
+    }
 
     await analyseAndRun(absInput, bundlePath);
     console.log(outputLogs.join('\n'));
