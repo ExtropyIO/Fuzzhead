@@ -91,6 +91,10 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
     outputLogs.push(`\nFuzzing file: ${path.basename(sourceTsPath)}`);
     outputLogs.push('-'.repeat(50));
 
+    // Get number of fuzz runs from environment variable, default to 200
+    const numFuzzRuns = parseInt(process.env.FUZZ_RUNS || '200');
+    outputLogs.push(`Running ${numFuzzRuns} fuzz iterations per method`);
+
     // AST for methods/decorators
     const program = ts.createProgram([sourceTsPath], {
         experimentalDecorators: true,
@@ -258,33 +262,37 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                 let skippedCount = 0;
 
                 for (const info of executeList) {
-                    const mockArgs = info.node.parameters.map(p => {
-                        const tName = p.type?.getText(sourceFileForAst) || '';
-                        return generateMockValue(p.type?.kind ?? 131, tName);
-                    });
+                    for (let i = 0; i < numFuzzRuns; i++) {
+                        const mockArgs = info.node.parameters.map(p => {
+                            const tName = p.type?.getText(sourceFileForAst) || '';
+                            return generateMockValue(p.type?.kind ?? 131, tName);
+                        });
 
-                    if (mockArgs.includes(null)) {
-                        skippedCount++;
-                        outputLogs.push(`  -> Skipping ${className}.${info.name}(...) due to unsupported parameter types`);
-                    } else {
-                        const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
-                        if (result === 'passed') {
-                            passedCount++;
+                        if (mockArgs.includes(null)) {
+                            skippedCount++;
+                            outputLogs.push(`  -> Skipping ${className}.${info.name}(...) due to unsupported parameter types`);
                         } else {
-                            failedCount++;
+                            const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
+                            if (result === 'passed') {
+                                passedCount++;
+                            } else {
+                                failedCount++;
+                            }
                         }
                     }
                 }
 
                 // Enhanced summary message
                 const totalTested = passedCount + failedCount;
+                const totalRuns = totalTested + skippedCount;
                 outputLogs.push(`\n🏁 Fuzzing complete:`);
-                outputLogs.push(`   ✅ ${passedCount} method(s) passed`);
-                outputLogs.push(`   ❌ ${failedCount} method(s) failed`);
+                outputLogs.push(`   ✅ ${passedCount} runs passed`);
+                outputLogs.push(`   ❌ ${failedCount} runs failed`);
                 if (skippedCount > 0) {
-                    outputLogs.push(`   ⏭️  ${skippedCount} method(s) skipped`);
+                    outputLogs.push(`   ⏭️  ${skippedCount} runs skipped`);
                 }
-                outputLogs.push(`   📊 Total: ${totalTested} method(s) tested`);
+                outputLogs.push(`   📊 Total: ${totalRuns} runs across ${executeList.length} method(s)`);
+                outputLogs.push(`   🔄 ${numFuzzRuns} iterations per method`);
             }
         } catch (e) {
             outputLogs.push(`- Error during local run: ${e.message}`);
@@ -297,6 +305,11 @@ async function main() {
     const inputPath = process.argv[2];
     if (!inputPath) {
         console.error('Usage: node src/fuzz-local.mjs path/to/Contract.ts');
+        console.error('');
+        console.error('Environment variables:');
+        console.error('  FUZZ_RUNS=<number>    Number of fuzz iterations per method (default: 50)');
+        console.error('  COMPILE=0             Disable proofs for faster testing');
+        console.error('  SKIP_INIT=1           Skip init() method execution');
         process.exit(1);
     }
     const absInput = path.isAbsolute(inputPath) ? inputPath : path.join(process.cwd(), inputPath);
