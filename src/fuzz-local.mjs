@@ -67,8 +67,6 @@ function generateMockValue(typeKind, typeName) {
 }
 
 async function executeContractMethod(name, instance, methodName, args, sender, senderKey, proofsEnabled, zkAppPrivateKey) {
-    const argsString = args.map(a => (typeof a === 'object' && a !== null && !Array.isArray(a)) ? `{...${a.constructor.name}}` : JSON.stringify(a)).join(', ');
-    let line = `  -> Calling ${name}(${argsString})... `;
     try {
         const method = instance[methodName];
         const txn = await Mina.transaction({ sender, fee: 0 }, async () => {
@@ -78,19 +76,19 @@ async function executeContractMethod(name, instance, methodName, args, sender, s
         if (proofsEnabled) await txn.prove?.();
         const keys = proofsEnabled ? [senderKey] : [senderKey, zkAppPrivateKey].filter(Boolean);
         await txn.sign(keys).send();
-        outputLogs.push(line + '✅ Success');
         return 'passed';
     } catch (e) {
-        outputLogs.push(line + '❌ Error');
-        outputLogs.push(`     Message: ${e.message}`);
         return 'failed';
     }
 }
 
 async function analyseAndRun(sourceTsPath, bundlePath) {
-    outputLogs.push(`\nFuzzing file: ${path.basename(bundlePath)}`);
-    outputLogs.push(`   (Source: ${path.basename(sourceTsPath)})`);
+    outputLogs.push(`\nFuzzing file: ${path.basename(sourceTsPath)}`);
     outputLogs.push('-'.repeat(50));
+
+    // Get number of fuzz runs from environment variable, default to 200
+    const numFuzzRuns = parseInt(process.env.FUZZ_RUNS || '200');
+    outputLogs.push(`Running ${numFuzzRuns} fuzz iterations per method`);
 
     // AST for methods/decorators
     const program = ts.createProgram([sourceTsPath], {
@@ -106,142 +104,161 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
     // Import bundled module
     const mod = await import(`file://${bundlePath}?v=${Date.now()}`);
     const targetModule = mod.default ?? mod;
-    outputLogs.push(`Imported module exports: ${Object.keys(targetModule).join(', ')}`);
 
-    // Optional custom mocks
-    if (targetModule.Sudoku) registerMockGenerator('Sudoku', () => targetModule.Sudoku.from(Array(9).fill(0).map(() => Array(9).fill(0))));
+    // Find all SmartContract classes in the file (exported or not)
+    const allSmartContractClasses = [];
 
-    const moduleSymbol = checker.getSymbolAtLocation(sourceFileForAst);
-    if (!moduleSymbol) { outputLogs.push('[Error] Could not find module symbol.'); return; }
-    const exports = checker.getExportsOfModule(moduleSymbol);
-    outputLogs.push(`Found ${exports.length} exports in the module.`);
+    function findSmartContractClasses(node) {
+        if (ts.isClassDeclaration(node) && node.name) {
+            const className = node.name.text;
 
-    for (const exportSymbol of exports) {
-        const resolvedSymbol = (exportSymbol.flags & ts.SymbolFlags.Alias) ? checker.getAliasedSymbol(exportSymbol) : exportSymbol;
-        const declaration = resolvedSymbol.declarations?.[0];
-        if (!declaration) continue;
+            // Check if it extends SmartContract
+            const extendsSmartContract = node.heritageClauses?.some(clause =>
+                clause.token === ts.SyntaxKind.ExtendsKeyword &&
+                clause.types.some(type => type.expression.getText(sourceFileForAst) === 'SmartContract')
+            );
 
-        if (ts.isClassDeclaration(declaration)) {
-            const className = resolvedSymbol.name;
-            outputLogs.push(`  - Found class: ${className}`);
-
-            // runtime check: extends SmartContract?
-            const ZkappClass = targetModule[className];
-            const extendsSmart = typeof ZkappClass === 'function' && (ZkappClass.prototype instanceof SmartContract);
-            if (!extendsSmart) {
-                outputLogs.push(`   - Not a SmartContract (runtime check)`);
-                continue;
+            if (extendsSmartContract) {
+                allSmartContractClasses.push({ name: className, declaration: node });
             }
-            outputLogs.push(`✅ Found SmartContract: ${className}`);
+        }
+        ts.forEachChild(node, findSmartContractClasses);
+    }
 
-            // Collect methods + decorators
-            const methodInfos = declaration.members.filter(ts.isMethodDeclaration).map(m => {
-                let decoratorsArr;
-                if (ts.canHaveDecorators?.(m)) decoratorsArr = ts.getDecorators(m);
-                else decoratorsArr = m.decorators;
-                const decoratorNames = decoratorsArr?.map(d => d.expression.getText(sourceFileForAst)) || [];
-                return { name: m.name.getText(sourceFileForAst), decoratorNames, node: m };
-            });
-            outputLogs.push('-'.repeat(50));
+    findSmartContractClasses(sourceFileForAst);
 
-            // Local chain + optional compile
-            const proofsEnabled = process.env.COMPILE !== '0'; // default: proofs ON
-            const shouldCompile = proofsEnabled;
-            try {
-                outputLogs.push(`- ${shouldCompile ? 'Compiling' : 'Skipping compile'} ${className}...`);
-                if (shouldCompile) {
-                    await ZkappClass.compile();
-                    outputLogs.push(`- Compilation successful.`);
-                } else {
-                    outputLogs.push(`- Running with proofs disabled (COMPILE=0).`);
-                }
+    outputLogs.push(`Available in module: ${Object.keys(targetModule).join(', ')}`);
 
-                const Local = await Mina.LocalBlockchain({ proofsEnabled });
-                Mina.setActiveInstance(Local);
+    for (const { name: className, declaration } of allSmartContractClasses) {
 
-                const acc0 = Local.testAccounts[0];
-                let deployerKey;
-                let deployerAccount;
-                if (acc0 && 'privateKey' in acc0 && acc0.privateKey) {
-                    deployerKey = acc0.privateKey;
-                    deployerAccount = acc0.publicKey;
-                } else if (acc0 && 'key' in acc0 && acc0.key) {
-                    deployerKey = acc0.key;
-                    deployerAccount = acc0.key.toPublicKey();
-                } else if (acc0 instanceof PrivateKey) {
-                    deployerKey = acc0;
-                    deployerAccount = acc0.toPublicKey();
-                } else {
-                    throw new Error('Could not read deployer key from Local.testAccounts[0]');
-                }
-                // Use an existing funded local account as zkApp key to avoid account-creation logic
-                const acc2 = Local.testAccounts[2];
-                let zkAppPrivateKey;
-                let zkAppAddress;
-                if (acc2 && 'privateKey' in acc2 && acc2.privateKey) {
-                    zkAppPrivateKey = acc2.privateKey;
-                    zkAppAddress = acc2.publicKey;
-                } else if (acc2 && 'key' in acc2 && acc2.key) {
-                    zkAppPrivateKey = acc2.key;
-                    zkAppAddress = acc2.key.toPublicKey();
-                } else if (acc2 instanceof PrivateKey) {
-                    zkAppPrivateKey = acc2;
-                    zkAppAddress = acc2.toPublicKey();
-                } else {
-                    zkAppPrivateKey = PrivateKey.random();
-                    zkAppAddress = zkAppPrivateKey.toPublicKey();
-                }
+        // Try to get the class from the module
+        let ZkappClass = targetModule[className];
 
-                const instance = new ZkappClass(zkAppAddress);
-                outputLogs.push(`- Instantiated ${className} successfully.`);
+        if (!ZkappClass) {
+            outputLogs.push(`⚠️  ${className} is not exported, skipping for now`);
+            continue;
+        }
 
-                const initMethodInfo = methodInfos.find(m => m.name === 'init');
+        // Runtime check: extends SmartContract?
+        const extendsSmart = typeof ZkappClass === 'function' && (ZkappClass.prototype instanceof SmartContract);
+        if (!extendsSmart) {
+            outputLogs.push(`   - ${className} not a SmartContract (runtime check)`);
+            continue;
+        }
 
-                // 1) Deploy in its own transaction
-                const deployTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
-                    instance.deploy({ zkappKey: zkAppPrivateKey });
-                    // Set verification key from compiled contract
+        outputLogs.push(`✅ Found SmartContract: ${className}`);
+
+        // Collect methods + decorators
+        const methodInfos = declaration.members.filter(ts.isMethodDeclaration).map(m => {
+            let decoratorsArr;
+            if (ts.canHaveDecorators?.(m)) decoratorsArr = ts.getDecorators(m);
+            else decoratorsArr = m.decorators;
+            const decoratorNames = decoratorsArr?.map(d => d.expression.getText(sourceFileForAst)) || [];
+            return { name: m.name.getText(sourceFileForAst), decoratorNames, node: m };
+        });
+        outputLogs.push('-'.repeat(50));
+
+        // Local chain + optional compile
+        const proofsEnabled = process.env.COMPILE !== '0'; // default: proofs ON
+        const shouldCompile = proofsEnabled;
+        try {
+            outputLogs.push(`- ${shouldCompile ? 'Compiling' : 'Skipping compile'} ${className}...`);
+            if (shouldCompile) {
+                await ZkappClass.compile();
+                outputLogs.push(`- Compilation successful.`);
+            } else {
+                outputLogs.push(`- Running with proofs disabled (COMPILE=0).`);
+            }
+
+            const Local = await Mina.LocalBlockchain({ proofsEnabled });
+            Mina.setActiveInstance(Local);
+
+            const acc0 = Local.testAccounts[0];
+            let deployerKey;
+            let deployerAccount;
+            if (acc0 && 'privateKey' in acc0 && acc0.privateKey) {
+                deployerKey = acc0.privateKey;
+                deployerAccount = acc0.publicKey;
+            } else if (acc0 && 'key' in acc0 && acc0.key) {
+                deployerKey = acc0.key;
+                deployerAccount = acc0.key.toPublicKey();
+            } else if (acc0 instanceof PrivateKey) {
+                deployerKey = acc0;
+                deployerAccount = acc0.toPublicKey();
+            } else {
+                throw new Error('Could not read deployer key from Local.testAccounts[0]');
+            }
+            // Use an existing funded local account as zkApp key to avoid account-creation logic
+            const acc2 = Local.testAccounts[2];
+            let zkAppPrivateKey;
+            let zkAppAddress;
+            if (acc2 && 'privateKey' in acc2 && acc2.privateKey) {
+                zkAppPrivateKey = acc2.privateKey;
+                zkAppAddress = acc2.publicKey;
+            } else if (acc2 && 'key' in acc2 && acc2.key) {
+                zkAppPrivateKey = acc2.key;
+                zkAppAddress = acc2.key.toPublicKey();
+            } else if (acc2 instanceof PrivateKey) {
+                zkAppPrivateKey = acc2;
+                zkAppAddress = acc2.toPublicKey();
+            } else {
+                zkAppPrivateKey = PrivateKey.random();
+                zkAppAddress = zkAppPrivateKey.toPublicKey();
+            }
+
+            const instance = new ZkappClass(zkAppAddress);
+            outputLogs.push(`- Instantiated ${className} successfully.`);
+
+            const initMethodInfo = methodInfos.find(m => m.name === 'init');
+
+            // 1) Deploy in its own transaction
+            const deployTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
+                instance.deploy({ zkappKey: zkAppPrivateKey });
+                // Set verification key from compiled contract only if proofs are enabled
+                if (proofsEnabled && ZkappClass._verificationKey) {
                     instance.account.verificationKey.set(ZkappClass._verificationKey);
-                });
-                if (proofsEnabled) await deployTxn.prove?.();
-                outputLogs.push(`- Signing deploy txn with keys: feePayer=${!!deployerKey}, zkKey=${!!zkAppPrivateKey}`);
-                await deployTxn.sign([deployerKey, zkAppPrivateKey]).send();
-                outputLogs.push(`- Deployed ${className} to local Mina.`);
-
-                // 2) Call init (if present) in a separate transaction
-                if (initMethodInfo && process.env.SKIP_INIT !== '1') {
-                    const mockArgs = initMethodInfo.node.parameters.map(p => {
-                        const tName = p.type?.getText(sourceFileForAst) || '';
-                        return generateMockValue(p.type?.kind ?? 131, tName);
-                    });
-                    if (!mockArgs.includes(null)) {
-                        const initTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
-                            if (!proofsEnabled) instance.requireSignature();
-                            await instance.init.apply(instance, mockArgs);
-                        });
-                        if (proofsEnabled) await initTxn.prove?.();
-                        const initKeys = proofsEnabled ? [deployerKey] : [deployerKey, zkAppPrivateKey];
-                        await initTxn.sign(initKeys).send();
-                        outputLogs.push(`- Ran init() in a separate transaction.`);
-                    } else {
-                        outputLogs.push(`  - Skipping init() due to un-mockable params.`);
-                    }
-                } else if (process.env.SKIP_INIT === '1') {
-                    outputLogs.push(`- SKIP_INIT=1: skipping init()`);
                 }
+            });
+            if (proofsEnabled) await deployTxn.prove?.();
+            outputLogs.push(`- Signing deploy txn with keys: feePayer=${!!deployerKey}, zkKey=${!!zkAppPrivateKey}`);
+            await deployTxn.sign([deployerKey, zkAppPrivateKey]).send();
+            outputLogs.push(`- Deployed ${className} to local Mina.`);
 
-                // Execute @method-decorated (excluding init)
-                let executeList = methodInfos.filter(i => i.decoratorNames.some(n => n.includes('method'))).filter(i => i.name !== 'init');
-
-                if (executeList.length === 0) {
-                    outputLogs.push(`   - No @method methods found to execute (excluding 'init').`);
+            // 2) Call init (if present) in a separate transaction
+            if (initMethodInfo && process.env.SKIP_INIT !== '1') {
+                const mockArgs = initMethodInfo.node.parameters.map(p => {
+                    const tName = p.type?.getText(sourceFileForAst) || '';
+                    return generateMockValue(p.type?.kind ?? 131, tName);
+                });
+                if (!mockArgs.includes(null)) {
+                    const initTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
+                        if (!proofsEnabled) instance.requireSignature();
+                        await instance.init.apply(instance, mockArgs);
+                    });
+                    if (proofsEnabled) await initTxn.prove?.();
+                    const initKeys = proofsEnabled ? [deployerKey] : [deployerKey, zkAppPrivateKey];
+                    await initTxn.sign(initKeys).send();
+                    outputLogs.push(`- Ran init() in a separate transaction.`);
                 } else {
-                    const sender = Local.testAccounts[1];
-                    let passedCount = 0;
-                    let failedCount = 0;
-                    let skippedCount = 0;
+                    outputLogs.push(`  - Skipping init() due to un-mockable params.`);
+                }
+            } else if (process.env.SKIP_INIT === '1') {
+                outputLogs.push(`- SKIP_INIT=1: skipping init()`);
+            }
 
-                    for (const info of executeList) {
+            // Execute @method-decorated (excluding init)
+            let executeList = methodInfos.filter(i => i.decoratorNames.some(n => n.includes('method'))).filter(i => i.name !== 'init');
+
+            if (executeList.length === 0) {
+                outputLogs.push(`   - No @method methods found to execute (excluding 'init').`);
+            } else {
+                const sender = Local.testAccounts[1];
+                let passedCount = 0;
+                let failedCount = 0;
+                let skippedCount = 0;
+
+                for (const info of executeList) {
+                    for (let i = 0; i < numFuzzRuns; i++) {
                         const mockArgs = info.node.parameters.map(p => {
                             const tName = p.type?.getText(sourceFileForAst) || '';
                             return generateMockValue(p.type?.kind ?? 131, tName);
@@ -249,31 +266,33 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
 
                         if (mockArgs.includes(null)) {
                             skippedCount++;
-                            outputLogs.push(`  -> Skipping ${className}.${info.name}(...) due to unsupported parameter types`);
                         } else {
                             const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
                             if (result === 'passed') {
                                 passedCount++;
+                                outputLogs.push(`  ✅ ${className}.${info.name}() PASSED on iteration ${i + 1}`);
                             } else {
                                 failedCount++;
                             }
                         }
                     }
-
-                    // Enhanced summary message
-                    const totalTested = passedCount + failedCount;
-                    outputLogs.push(`\n🏁 Fuzzing complete:`);
-                    outputLogs.push(`   ✅ ${passedCount} method(s) passed`);
-                    outputLogs.push(`   ❌ ${failedCount} method(s) failed`);
-                    if (skippedCount > 0) {
-                        outputLogs.push(`   ⏭️  ${skippedCount} method(s) skipped`);
-                    }
-                    outputLogs.push(`   📊 Total: ${totalTested} method(s) tested`);
                 }
-            } catch (e) {
-                outputLogs.push(`- Error during local run: ${e.message}`);
-                if (e.stack) outputLogs.push(e.stack);
+
+                // Enhanced summary message
+                const totalTested = passedCount + failedCount;
+                const totalRuns = totalTested + skippedCount;
+                outputLogs.push(`\n🏁 Fuzzing complete:`);
+                outputLogs.push(`   ✅ ${passedCount} runs passed`);
+                outputLogs.push(`   ❌ ${failedCount} runs failed`);
+                if (skippedCount > 0) {
+                    outputLogs.push(`   ⏭️  ${skippedCount} runs skipped (unsupported parameter types)`);
+                }
+                outputLogs.push(`   📊 Total: ${totalRuns} runs across ${executeList.length} method(s)`);
+                outputLogs.push(`   🔄 ${numFuzzRuns} iterations per method`);
             }
+        } catch (e) {
+            outputLogs.push(`- Error during local run: ${e.message}`);
+            if (e.stack) outputLogs.push(e.stack);
         }
     }
 }
@@ -282,6 +301,11 @@ async function main() {
     const inputPath = process.argv[2];
     if (!inputPath) {
         console.error('Usage: node src/fuzz-local.mjs path/to/Contract.ts');
+        console.error('');
+        console.error('Environment variables:');
+        console.error('  FUZZ_RUNS=<number>    Number of fuzz iterations per method (default: 50)');
+        console.error('  COMPILE=0             Disable proofs for faster testing');
+        console.error('  SKIP_INIT=1           Skip init() method execution');
         process.exit(1);
     }
     const absInput = path.isAbsolute(inputPath) ? inputPath : path.join(process.cwd(), inputPath);
@@ -317,15 +341,30 @@ async function main() {
     });
     fs.writeFileSync(compiledJsPath, transpiled.outputText);
 
-    await esbuild.build({
-        entryPoints: [compiledJsPath],
-        bundle: true,
-        outfile: bundlePath,
-        format: 'esm',
-        platform: 'node',
-        target: 'es2022',
-        external
-    });
+    try {
+        await esbuild.build({
+            entryPoints: [compiledJsPath],
+            bundle: true,
+            outfile: bundlePath,
+            format: 'esm',
+            platform: 'node',
+            target: 'es2022',
+            external
+        });
+    } catch (buildError) {
+        // Check if the error is related to module resolution
+        if (buildError.message && buildError.message.includes('Could not resolve')) {
+            console.error('\n🚨 ESBuild Resolution Error Detected!🚨\n');
+            console.error('\n💡 Recommended Solution:');
+            console.error('To continue fuzzing, temporarily comment out local file imports in your TypeScript file.');
+            console.error('After commenting out the imports, run the fuzzer again.');
+            console.error('Note: This will limit fuzzing to methods that don\'t depend on these imports.');
+            process.exit(1);
+        } else {
+            // Re-throw other build errors
+            throw buildError;
+        }
+    }
 
     await analyseAndRun(absInput, bundlePath);
     console.log(outputLogs.join('\n'));

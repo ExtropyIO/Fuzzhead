@@ -6,10 +6,11 @@ A comprehensive fuzzing tool for testing Mina blockchain smart contracts built w
 
 - **Automatic Contract Discovery** - Scans TypeScript files and identifies o1js SmartContract classes
 - **Method Detection** - Finds all `@method`-decorated functions for comprehensive testing
+- **Configurable Fuzz Testing** - Run multiple iterations per method with random inputs (default: 200 iterations)
 - **Local Blockchain Simulation** - Uses Mina LocalBlockchain for safe, isolated testing
 - **Smart Type Generation** - Generates valid mock data for standard o1js types (`Field`, `Bool`, `UInt32`, `PublicKey`, etc.)
 - **Flexible Testing Modes** - Supports both proof-enabled and proof-disabled testing
-- **Detailed Reporting** - Clear pass/fail/skip statistics with actionable error messages
+- **Clean Output** - Shows only successful runs and summary statistics for focused debugging
 
 ## 🚀 Quick Start
 
@@ -28,18 +29,18 @@ cd Fuzzhead
 # Install dependencies
 npm install
 
-# Verify installation
-node src/fuzz-local.mjs --help
+# Verify installation (run without arguments to see usage)
+node src/fuzz-local.mjs
 ```
 
 ### Basic Usage
 
 ```bash
-# Test a smart contract (with proofs enabled)
+# Test a smart contract (200 iterations per method)
 node src/fuzz-local.mjs path/to/YourContract.ts
 
-# Fast testing (proofs disabled)
-COMPILE=0 node src/fuzz-local.mjs path/to/YourContract.ts
+# Fast testing with fewer iterations
+FUZZ_RUNS=50 COMPILE=0 node src/fuzz-local.mjs path/to/YourContract.ts
 
 # Skip initialization method
 SKIP_INIT=1 node src/fuzz-local.mjs path/to/YourContract.ts
@@ -59,12 +60,10 @@ Methods with unsupported custom types are gracefully skipped with clear reportin
 ## 🎯 Example Output
 
 ```
-Fuzzing file: fuzz-local-bundle.mjs
-   (Source: hello-world.ts)
+Fuzzing file: hello-world.ts
 --------------------------------------------------
-Imported module exports: HelloWorld, adminPrivateKey, adminPublicKey
-Found 3 exports in the module.
-  - Found class: HelloWorld
+Running 200 fuzz iterations per method
+Available in module: HelloWorld, adminPrivateKey, adminPublicKey
 ✅ Found SmartContract: HelloWorld
 --------------------------------------------------
 - Compiling HelloWorld...
@@ -72,13 +71,12 @@ Found 3 exports in the module.
 - Instantiated HelloWorld successfully.
 - Deployed HelloWorld to local Mina.
 - Ran init() in a separate transaction.
-  -> Calling HelloWorld.update({...Field}, {...PrivateKey})... ❌ Error
-     Message: Field.assertEquals(): 4 != 3410760802053037232579132740112414657897109365132631180492412394013181432615
 
 🏁 Fuzzing complete:
-   ✅ 0 method(s) passed
-   ❌ 1 method(s) failed  
-   📊 Total: 1 method(s) tested
+   ✅ 2 runs passed
+   ❌ 198 runs failed
+   📊 Total: 200 runs across 1 method(s)
+   🔄 200 iterations per method
 ```
 
 ## ⚙️ Configuration Options
@@ -87,17 +85,21 @@ Found 3 exports in the module.
 
 | Variable    | Default        | Description                                                |
 | ----------- | -------------- | ---------------------------------------------------------- |
+| `FUZZ_RUNS` | `200`          | Number of fuzz iterations per method                       |
 | `COMPILE`   | `1` (enabled)  | Set to `0` to disable proof compilation for faster testing |
 | `SKIP_INIT` | `0` (disabled) | Set to `1` to skip calling the contract's `init()` method  |
 
 ### Usage Examples
 
 ```bash
-# Full testing with proofs (recommended for production)
+# Full testing with proofs (200 iterations per method)
 node src/fuzz-local.mjs contracts/MyContract.ts
 
-# Fast development testing
-COMPILE=0 SKIP_INIT=1 node src/fuzz-local.mjs contracts/MyContract.ts
+# Fast development testing with fewer iterations
+FUZZ_RUNS=50 COMPILE=0 SKIP_INIT=1 node src/fuzz-local.mjs contracts/MyContract.ts
+
+# Comprehensive testing (1000 iterations for critical contracts)
+FUZZ_RUNS=1000 node src/fuzz-local.mjs contracts/MyContract.ts
 
 # Test contract with init but no proofs
 COMPILE=0 node src/fuzz-local.mjs contracts/MyContract.ts
@@ -144,9 +146,9 @@ export class MyContract extends SmartContract {
 
 ### Understanding Results
 
-- **✅ Passed**: Method executed successfully without errors
-- **❌ Failed**: Method threw an error (including business logic validation failures)  
-- **⏭️ Skipped**: Method uses unsupported parameter types
+- **✅ Passed**: Method executed successfully without errors (shows iteration number)
+- **❌ Failed**: Method threw an error (counted silently for cleaner output)  
+- **⏭️ Skipped**: Method uses unsupported parameter types (summary count only)
 
 ## 🐛 Troubleshooting
 
