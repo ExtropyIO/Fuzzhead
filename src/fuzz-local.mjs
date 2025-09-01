@@ -67,8 +67,6 @@ function generateMockValue(typeKind, typeName) {
 }
 
 async function executeContractMethod(name, instance, methodName, args, sender, senderKey, proofsEnabled, zkAppPrivateKey) {
-    const argsString = args.map(a => (typeof a === 'object' && a !== null && !Array.isArray(a)) ? `{...${a.constructor.name}}` : JSON.stringify(a)).join(', ');
-    let line = `  -> Calling ${name}(${argsString})... `;
     try {
         const method = instance[methodName];
         const txn = await Mina.transaction({ sender, fee: 0 }, async () => {
@@ -78,11 +76,8 @@ async function executeContractMethod(name, instance, methodName, args, sender, s
         if (proofsEnabled) await txn.prove?.();
         const keys = proofsEnabled ? [senderKey] : [senderKey, zkAppPrivateKey].filter(Boolean);
         await txn.sign(keys).send();
-        outputLogs.push(line + '✅ Success');
         return 'passed';
     } catch (e) {
-        outputLogs.push(line + '❌ Error');
-        outputLogs.push(`     Message: ${e.message}`);
         return 'failed';
     }
 }
@@ -132,7 +127,6 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
 
     findSmartContractClasses(sourceFileForAst);
 
-    outputLogs.push(`Found ${allSmartContractClasses.length} SmartContract class(es): ${allSmartContractClasses.map(c => c.name).join(', ')}`);
     outputLogs.push(`Available in module: ${Object.keys(targetModule).join(', ')}`);
 
     for (const { name: className, declaration } of allSmartContractClasses) {
@@ -275,6 +269,7 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                             const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
                             if (result === 'passed') {
                                 passedCount++;
+                                outputLogs.push(`  ✅ ${className}.${info.name}() PASSED on iteration ${i + 1}`);
                             } else {
                                 failedCount++;
                             }
