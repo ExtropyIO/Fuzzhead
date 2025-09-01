@@ -214,8 +214,10 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
             // 1) Deploy in its own transaction
             const deployTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
                 instance.deploy({ zkappKey: zkAppPrivateKey });
-                // Set verification key from compiled contract
-                instance.account.verificationKey.set(ZkappClass._verificationKey);
+                // Set verification key from compiled contract only if proofs are enabled
+                if (proofsEnabled && ZkappClass._verificationKey) {
+                    instance.account.verificationKey.set(ZkappClass._verificationKey);
+                }
             });
             if (proofsEnabled) await deployTxn.prove?.();
             outputLogs.push(`- Signing deploy txn with keys: feePayer=${!!deployerKey}, zkKey=${!!zkAppPrivateKey}`);
@@ -264,7 +266,6 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
 
                         if (mockArgs.includes(null)) {
                             skippedCount++;
-                            outputLogs.push(`  -> Skipping ${className}.${info.name}(...) due to unsupported parameter types`);
                         } else {
                             const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
                             if (result === 'passed') {
@@ -284,7 +285,7 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                 outputLogs.push(`   ✅ ${passedCount} runs passed`);
                 outputLogs.push(`   ❌ ${failedCount} runs failed`);
                 if (skippedCount > 0) {
-                    outputLogs.push(`   ⏭️  ${skippedCount} runs skipped`);
+                    outputLogs.push(`   ⏭️  ${skippedCount} runs skipped (unsupported parameter types)`);
                 }
                 outputLogs.push(`   📊 Total: ${totalRuns} runs across ${executeList.length} method(s)`);
                 outputLogs.push(`   🔄 ${numFuzzRuns} iterations per method`);
