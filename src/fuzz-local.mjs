@@ -70,15 +70,20 @@ async function executeContractMethod(name, instance, methodName, args, sender, s
     try {
         const method = instance[methodName];
         const txn = await Mina.transaction({ sender, fee: 0 }, async () => {
-            if (!proofsEnabled) instance.requireSignature();
             await method.apply(instance, args);
+            if (!proofsEnabled) {
+                // When proofs are disabled, require signature authorization
+                instance.requireSignature();
+            }
         });
-        if (proofsEnabled) await txn.prove?.();
+        if (proofsEnabled) {
+            await txn.prove();
+        }
         const keys = proofsEnabled ? [senderKey] : [senderKey, zkAppPrivateKey].filter(Boolean);
         await txn.sign(keys).send();
-        return 'passed';
+        return { status: 'passed' };
     } catch (e) {
-        return 'failed';
+        return { status: 'failed', error: e.message };
     }
 }
 
@@ -252,7 +257,22 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
             if (executeList.length === 0) {
                 outputLogs.push(`   - No @method methods found to execute (excluding 'init').`);
             } else {
-                const sender = Local.testAccounts[1];
+                const acc1 = Local.testAccounts[1];
+                let senderKey;
+                let senderAccount;
+                if (acc1 && 'privateKey' in acc1 && acc1.privateKey) {
+                    senderKey = acc1.privateKey;
+                    senderAccount = acc1.publicKey;
+                } else if (acc1 && 'key' in acc1 && acc1.key) {
+                    senderKey = acc1.key;
+                    senderAccount = acc1.key.toPublicKey();
+                } else if (acc1 instanceof PrivateKey) {
+                    senderKey = acc1;
+                    senderAccount = acc1.toPublicKey();
+                } else {
+                    throw new Error('Could not read sender key from Local.testAccounts[1]');
+                }
+
                 let passedCount = 0;
                 let failedCount = 0;
                 let skippedCount = 0;
@@ -267,12 +287,13 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                         if (mockArgs.includes(null)) {
                             skippedCount++;
                         } else {
-                            const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
-                            if (result === 'passed') {
+                            const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, senderAccount, senderKey, proofsEnabled, zkAppPrivateKey);
+                            if (result.status === 'passed') {
                                 passedCount++;
                                 outputLogs.push(`  ✅ ${className}.${info.name}() PASSED on iteration ${i + 1}`);
                             } else {
                                 failedCount++;
+                                outputLogs.push(`  ❌ ${className}.${info.name}() FAILED on iteration ${i + 1}: ${result.error}`);
                             }
                         }
                     }
