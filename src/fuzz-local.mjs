@@ -70,15 +70,20 @@ async function executeContractMethod(name, instance, methodName, args, sender, s
     try {
         const method = instance[methodName];
         const txn = await Mina.transaction({ sender, fee: 0 }, async () => {
-            if (!proofsEnabled) instance.requireSignature();
             await method.apply(instance, args);
+            if (!proofsEnabled) {
+                // When proofs are disabled, require signature authorization
+                instance.requireSignature();
+            }
         });
-        if (proofsEnabled) await txn.prove?.();
+        if (proofsEnabled) {
+            await txn.prove();
+        }
         const keys = proofsEnabled ? [senderKey] : [senderKey, zkAppPrivateKey].filter(Boolean);
         await txn.sign(keys).send();
-        return 'passed';
+        return { status: 'passed' };
     } catch (e) {
-        return 'failed';
+        return { status: 'failed', error: e.message };
     }
 }
 
@@ -159,7 +164,7 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
         outputLogs.push('-'.repeat(50));
 
         // Local chain + optional compile
-        const proofsEnabled = process.env.COMPILE !== '0'; // default: proofs ON
+        const proofsEnabled = process.env.COMPILE === '1'; // default: proofs OFF
         const shouldCompile = proofsEnabled;
         try {
             outputLogs.push(`- ${shouldCompile ? 'Compiling' : 'Skipping compile'} ${className}...`);
@@ -225,7 +230,7 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
             outputLogs.push(`- Deployed ${className} to local Mina.`);
 
             // 2) Call init (if present) in a separate transaction
-            if (initMethodInfo && process.env.SKIP_INIT !== '1') {
+            if (initMethodInfo && process.env.SKIP_INIT === '0') { // default: skip init
                 const mockArgs = initMethodInfo.node.parameters.map(p => {
                     const tName = p.type?.getText(sourceFileForAst) || '';
                     return generateMockValue(p.type?.kind ?? 131, tName);
@@ -252,7 +257,22 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
             if (executeList.length === 0) {
                 outputLogs.push(`   - No @method methods found to execute (excluding 'init').`);
             } else {
-                const sender = Local.testAccounts[1];
+                const acc1 = Local.testAccounts[1];
+                let senderKey;
+                let senderAccount;
+                if (acc1 && 'privateKey' in acc1 && acc1.privateKey) {
+                    senderKey = acc1.privateKey;
+                    senderAccount = acc1.publicKey;
+                } else if (acc1 && 'key' in acc1 && acc1.key) {
+                    senderKey = acc1.key;
+                    senderAccount = acc1.key.toPublicKey();
+                } else if (acc1 instanceof PrivateKey) {
+                    senderKey = acc1;
+                    senderAccount = acc1.toPublicKey();
+                } else {
+                    throw new Error('Could not read sender key from Local.testAccounts[1]');
+                }
+
                 let passedCount = 0;
                 let failedCount = 0;
                 let skippedCount = 0;
@@ -267,12 +287,13 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                         if (mockArgs.includes(null)) {
                             skippedCount++;
                         } else {
-                            const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, sender.publicKey, sender.privateKey, proofsEnabled, zkAppPrivateKey);
-                            if (result === 'passed') {
+                            const result = await executeContractMethod(`${className}.${info.name}`, instance, info.name, mockArgs, senderAccount, senderKey, proofsEnabled, zkAppPrivateKey);
+                            if (result.status === 'passed') {
                                 passedCount++;
                                 outputLogs.push(`  ✅ ${className}.${info.name}() PASSED on iteration ${i + 1}`);
                             } else {
                                 failedCount++;
+                                outputLogs.push(`  ❌ ${className}.${info.name}() FAILED on iteration ${i + 1}: ${result.error}`);
                             }
                         }
                     }
@@ -297,6 +318,37 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
     }
 }
 
+// Function to find all TypeScript dependencies
+function findTsDependencies(tsFilePath, visited = new Set()) {
+    if (visited.has(tsFilePath)) return [];
+    visited.add(tsFilePath);
+
+    const dependencies = [];
+    const sourceCode = fs.readFileSync(tsFilePath, 'utf-8');
+    const sourceFile = ts.createSourceFile(tsFilePath, sourceCode, ts.ScriptTarget.Latest, true);
+
+    function visit(node) {
+        if (ts.isImportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+            const importPath = node.moduleSpecifier.text;
+            if (importPath.startsWith('./') || importPath.startsWith('../')) {
+                const baseDir = path.dirname(tsFilePath);
+                const resolvedPath = path.resolve(baseDir, importPath);
+                const tsPath = resolvedPath.endsWith('.ts') ? resolvedPath : resolvedPath + '.ts';
+
+                if (fs.existsSync(tsPath)) {
+                    dependencies.push(tsPath);
+                    // Recursively find dependencies of this file
+                    dependencies.push(...findTsDependencies(tsPath, visited));
+                }
+            }
+        }
+        ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+    return dependencies;
+}
+
 async function main() {
     const inputPath = process.argv[2];
     if (!inputPath) {
@@ -319,27 +371,53 @@ async function main() {
     fs.mkdirSync(outDir, { recursive: true });
     const bundlePath = path.join(outDir, 'fuzz-local-bundle.mjs');
     const compiledJsPath = path.join(outDir, 'compiled.js');
-    let external = ['o1js-unsafe-bindings'];
+    let external = [
+        'o1js',
+        'o1js-unsafe-bindings',
+        'cachedir',
+        'os', 'fs', 'path', 'url', 'crypto', 'util', 'stream', 'events', 'buffer',
+        'child_process', 'cluster', 'dgram', 'dns', 'http', 'https', 'net', 'tls',
+        'readline', 'repl', 'string_decoder', 'tty', 'vm', 'zlib', 'assert',
+        'constants', 'domain', 'punycode', 'querystring', 'timers', 'v8',
+        'worker_threads', 'perf_hooks', 'trace_events', 'async_hooks', 'inspector',
+        'module', 'process', 'console'
+    ];
     try {
         const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
         external = [...Object.keys(pkg.dependencies || {}), ...external];
     } catch { }
 
-    // Transpile TS -> JS with legacy decorators & metadata
-    const tsSource = fs.readFileSync(absInput, 'utf-8');
-    const transpiled = ts.transpileModule(tsSource, {
-        compilerOptions: {
-            experimentalDecorators: true,
-            emitDecoratorMetadata: true,
-            useDefineForClassFields: false,
-            target: ts.ScriptTarget.ES2022,
-            module: ts.ModuleKind.ESNext,
-            esModuleInterop: true,
-            allowSyntheticDefaultImports: true
-        },
-        fileName: path.basename(absInput)
-    });
-    fs.writeFileSync(compiledJsPath, transpiled.outputText);
+    // Find all TypeScript dependencies
+    const allTsFiles = [absInput, ...findTsDependencies(absInput)];
+    console.log(`Found ${allTsFiles.length} TypeScript files to transpile:`, allTsFiles.map(f => path.basename(f)));
+
+    // Transpile all TS files -> JS with legacy decorators & metadata
+    const transpiledFiles = new Map();
+
+    for (const tsFile of allTsFiles) {
+        const tsSource = fs.readFileSync(tsFile, 'utf-8');
+        const transpiled = ts.transpileModule(tsSource, {
+            compilerOptions: {
+                experimentalDecorators: true,
+                emitDecoratorMetadata: true,
+                useDefineForClassFields: false,
+                target: ts.ScriptTarget.ES2022,
+                module: ts.ModuleKind.ESNext,
+                esModuleInterop: true,
+                allowSyntheticDefaultImports: true
+            },
+            fileName: path.basename(tsFile)
+        });
+
+        const jsFileName = path.basename(tsFile, '.ts') + '.js';
+        const jsPath = path.join(outDir, jsFileName);
+        fs.writeFileSync(jsPath, transpiled.outputText);
+        transpiledFiles.set(tsFile, jsPath);
+    }
+
+    // Write the main compiled file
+    const mainTranspiledContent = fs.readFileSync(transpiledFiles.get(absInput), 'utf-8');
+    fs.writeFileSync(compiledJsPath, mainTranspiledContent);
 
     try {
         await esbuild.build({
@@ -349,7 +427,25 @@ async function main() {
             format: 'esm',
             platform: 'node',
             target: 'es2022',
-            external
+            external,
+            resolveExtensions: ['.js', '.ts'],
+            plugins: [{
+                name: 'resolve-relative-imports',
+                setup(build) {
+                    build.onResolve({ filter: /^\./ }, (args) => {
+                        const resolvedPath = path.resolve(path.dirname(args.importer), args.path);
+                        const jsPath = resolvedPath.endsWith('.js') ? resolvedPath : resolvedPath + '.js';
+
+                        // Check if we have a transpiled version
+                        if (fs.existsSync(jsPath)) {
+                            return { path: jsPath };
+                        }
+
+                        // Fallback to original resolution
+                        return null;
+                    });
+                }
+            }]
         });
     } catch (buildError) {
         // Check if the error is related to module resolution
