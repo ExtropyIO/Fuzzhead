@@ -159,7 +159,7 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
         outputLogs.push('-'.repeat(50));
 
         // Local chain + optional compile
-        const proofsEnabled = process.env.COMPILE !== '0'; // default: proofs ON
+        const proofsEnabled = process.env.COMPILE === '1'; // default: proofs OFF
         const shouldCompile = proofsEnabled;
         try {
             outputLogs.push(`- ${shouldCompile ? 'Compiling' : 'Skipping compile'} ${className}...`);
@@ -225,7 +225,7 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
             outputLogs.push(`- Deployed ${className} to local Mina.`);
 
             // 2) Call init (if present) in a separate transaction
-            if (initMethodInfo && process.env.SKIP_INIT !== '1') {
+            if (initMethodInfo && process.env.SKIP_INIT === '0') { // default: skip init
                 const mockArgs = initMethodInfo.node.parameters.map(p => {
                     const tName = p.type?.getText(sourceFileForAst) || '';
                     return generateMockValue(p.type?.kind ?? 131, tName);
