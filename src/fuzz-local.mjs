@@ -297,6 +297,37 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
     }
 }
 
+// Function to find all TypeScript dependencies
+function findTsDependencies(tsFilePath, visited = new Set()) {
+    if (visited.has(tsFilePath)) return [];
+    visited.add(tsFilePath);
+
+    const dependencies = [];
+    const sourceCode = fs.readFileSync(tsFilePath, 'utf-8');
+    const sourceFile = ts.createSourceFile(tsFilePath, sourceCode, ts.ScriptTarget.Latest, true);
+
+    function visit(node) {
+        if (ts.isImportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+            const importPath = node.moduleSpecifier.text;
+            if (importPath.startsWith('./') || importPath.startsWith('../')) {
+                const baseDir = path.dirname(tsFilePath);
+                const resolvedPath = path.resolve(baseDir, importPath);
+                const tsPath = resolvedPath.endsWith('.ts') ? resolvedPath : resolvedPath + '.ts';
+
+                if (fs.existsSync(tsPath)) {
+                    dependencies.push(tsPath);
+                    // Recursively find dependencies of this file
+                    dependencies.push(...findTsDependencies(tsPath, visited));
+                }
+            }
+        }
+        ts.forEachChild(node, visit);
+    }
+
+    visit(sourceFile);
+    return dependencies;
+}
+
 async function main() {
     const inputPath = process.argv[2];
     if (!inputPath) {
@@ -319,27 +350,53 @@ async function main() {
     fs.mkdirSync(outDir, { recursive: true });
     const bundlePath = path.join(outDir, 'fuzz-local-bundle.mjs');
     const compiledJsPath = path.join(outDir, 'compiled.js');
-    let external = ['o1js-unsafe-bindings'];
+    let external = [
+        'o1js',
+        'o1js-unsafe-bindings',
+        'cachedir',
+        'os', 'fs', 'path', 'url', 'crypto', 'util', 'stream', 'events', 'buffer',
+        'child_process', 'cluster', 'dgram', 'dns', 'http', 'https', 'net', 'tls',
+        'readline', 'repl', 'string_decoder', 'tty', 'vm', 'zlib', 'assert',
+        'constants', 'domain', 'punycode', 'querystring', 'timers', 'v8',
+        'worker_threads', 'perf_hooks', 'trace_events', 'async_hooks', 'inspector',
+        'module', 'process', 'console'
+    ];
     try {
         const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
         external = [...Object.keys(pkg.dependencies || {}), ...external];
     } catch { }
 
-    // Transpile TS -> JS with legacy decorators & metadata
-    const tsSource = fs.readFileSync(absInput, 'utf-8');
-    const transpiled = ts.transpileModule(tsSource, {
-        compilerOptions: {
-            experimentalDecorators: true,
-            emitDecoratorMetadata: true,
-            useDefineForClassFields: false,
-            target: ts.ScriptTarget.ES2022,
-            module: ts.ModuleKind.ESNext,
-            esModuleInterop: true,
-            allowSyntheticDefaultImports: true
-        },
-        fileName: path.basename(absInput)
-    });
-    fs.writeFileSync(compiledJsPath, transpiled.outputText);
+    // Find all TypeScript dependencies
+    const allTsFiles = [absInput, ...findTsDependencies(absInput)];
+    console.log(`Found ${allTsFiles.length} TypeScript files to transpile:`, allTsFiles.map(f => path.basename(f)));
+
+    // Transpile all TS files -> JS with legacy decorators & metadata
+    const transpiledFiles = new Map();
+
+    for (const tsFile of allTsFiles) {
+        const tsSource = fs.readFileSync(tsFile, 'utf-8');
+        const transpiled = ts.transpileModule(tsSource, {
+            compilerOptions: {
+                experimentalDecorators: true,
+                emitDecoratorMetadata: true,
+                useDefineForClassFields: false,
+                target: ts.ScriptTarget.ES2022,
+                module: ts.ModuleKind.ESNext,
+                esModuleInterop: true,
+                allowSyntheticDefaultImports: true
+            },
+            fileName: path.basename(tsFile)
+        });
+
+        const jsFileName = path.basename(tsFile, '.ts') + '.js';
+        const jsPath = path.join(outDir, jsFileName);
+        fs.writeFileSync(jsPath, transpiled.outputText);
+        transpiledFiles.set(tsFile, jsPath);
+    }
+
+    // Write the main compiled file
+    const mainTranspiledContent = fs.readFileSync(transpiledFiles.get(absInput), 'utf-8');
+    fs.writeFileSync(compiledJsPath, mainTranspiledContent);
 
     try {
         await esbuild.build({
@@ -349,7 +406,25 @@ async function main() {
             format: 'esm',
             platform: 'node',
             target: 'es2022',
-            external
+            external,
+            resolveExtensions: ['.js', '.ts'],
+            plugins: [{
+                name: 'resolve-relative-imports',
+                setup(build) {
+                    build.onResolve({ filter: /^\./ }, (args) => {
+                        const resolvedPath = path.resolve(path.dirname(args.importer), args.path);
+                        const jsPath = resolvedPath.endsWith('.js') ? resolvedPath : resolvedPath + '.js';
+
+                        // Check if we have a transpiled version
+                        if (fs.existsSync(jsPath)) {
+                            return { path: jsPath };
+                        }
+
+                        // Fallback to original resolution
+                        return null;
+                    });
+                }
+            }]
         });
     } catch (buildError) {
         // Check if the error is related to module resolution
