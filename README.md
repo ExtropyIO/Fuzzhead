@@ -11,6 +11,8 @@ A comprehensive fuzzing tool for testing Mina blockchain smart contracts built w
 - **Smart Type Generation** - Generates valid mock data for standard o1js types (`Field`, `Bool`, `UInt32`, `PublicKey`, etc.)
 - **Flexible Testing Modes** - Supports both proof-enabled and proof-disabled testing
 - **Enhanced Error Reporting** - Shows detailed error messages for failed tests to aid debugging
+- **Input Value Logging** - Shows successful test inputs to understand contract behavior
+- **State Management** - Properly handles contract state initialization and persistence
 
 ## 🚀 Quick Start
 
@@ -30,20 +32,23 @@ cd Fuzzhead
 npm install
 
 # Verify installation (run without arguments to see usage)
-node src/fuzz-local.mjs
+node src/fuzz-o1js.mjs
 ```
 
 ### Basic Usage
 
 ```bash
 # Test a smart contract (200 iterations per method, fast mode)
-node src/fuzz-local.mjs path/to/YourContract.ts
+node src/fuzz-o1js.mjs path/to/YourContract.ts
 
 # Enable full proof compilation (slower but more comprehensive)
-COMPILE=1 node src/fuzz-local.mjs path/to/YourContract.ts
+COMPILE=1 node src/fuzz-o1js.mjs path/to/YourContract.ts
 
 # Customize number of iterations
-FUZZ_RUNS=50 node src/fuzz-local.mjs path/to/YourContract.ts
+FUZZ_RUNS=50 node src/fuzz-o1js.mjs path/to/YourContract.ts
+
+# Skip contract initialization
+SKIP_INIT=1 node src/fuzz-o1js.mjs path/to/YourContract.ts
 ```
 
 ## 📋 Supported Types
@@ -59,30 +64,36 @@ Methods with unsupported custom types are gracefully skipped with clear reportin
 
 ## 🎯 Example Output
 
-### Success Case
+### Success Case with Input Logging
 ```
-Fuzzing file: simple-test.ts
+Fuzzing file: success-test.ts
 --------------------------------------------------
-Running 200 fuzz iterations per method
-Available in module: SimpleTestContract
-✅ Found SmartContract: SimpleTestContract
+Running 3 fuzz iterations per method
+Available in module: SuccessTestContract
+✅ Found SmartContract: SuccessTestContract
 --------------------------------------------------
-- Skipping compile SimpleTestContract...
+- Skipping compile SuccessTestContract...
 - Running with proofs disabled (COMPILE=0).
-- Instantiated SimpleTestContract successfully.
-- Deployed SimpleTestContract to local Mina.
-  ✅ SimpleTestContract.setValue() PASSED on iteration 1
-  ✅ SimpleTestContract.increment() PASSED on iteration 1
-  ✅ SimpleTestContract.reset() PASSED on iteration 1
+- Instantiated SuccessTestContract successfully.
+- Deployed SuccessTestContract to local Mina.
+- Starting fuzzing of 5 method(s)...
+- Fuzzing method: increment
+  ✅ SuccessTestContract.increment() PASSED on iteration 1 with args: [15642306456140377162899274593397233099325979169677499799018088248912831241930]
+  ✅ SuccessTestContract.increment() PASSED on iteration 2 with args: [17832682169112135381898627975876494676133537861074740613827092748443352213016]
+  ✅ SuccessTestContract.increment() PASSED on iteration 3 with args: [20188935582657851009759262452091366309231774932170315181923662941721428845912]
+- Fuzzing method: addToTotal
+  ✅ SuccessTestContract.addToTotal() PASSED on iteration 1 with args: [180348]
+  ✅ SuccessTestContract.addToTotal() PASSED on iteration 2 with args: [855373]
+  ✅ SuccessTestContract.addToTotal() PASSED on iteration 3 with args: [461443]
 
 🏁 Fuzzing complete:
-   ✅ 800 runs passed
-   ❌ 0 runs failed
-   📊 Total: 800 runs across 4 method(s)
-   🔄 200 iterations per method
+   ✅ 12 runs passed
+   ❌ 3 runs failed
+   📊 Total: 15 runs across 5 method(s)
+   🔄 3 iterations per method
 ```
 
-### Failure Case with Detailed Errors
+<!-- ### Failure Case with Detailed Errors
 ```
 Fuzzing file: fail-test.ts
 --------------------------------------------------
@@ -96,7 +107,7 @@ Fuzzing file: fail-test.ts
    ❌ 680 runs failed
    📊 Total: 800 runs across 10 method(s)
    🔄 80 iterations per method
-```
+``` -->
 
 ## ⚙️ Configuration Options
 
@@ -106,25 +117,28 @@ Fuzzing file: fail-test.ts
 | ----------- | -------------- | ----------------------------------------------------------------- |
 | `FUZZ_RUNS` | `200`          | Number of fuzz iterations per method                              |
 | `COMPILE`   | `0` (disabled) | Set to `1` to enable proof compilation (slower but comprehensive) |
-| `SKIP_INIT` | `1` (enabled)  | Set to `0` to call the contract's `init()` method                 |
+| `SKIP_INIT` | `0` (disabled) | Set to `1` to skip the contract's `init()` method                 |
 
 ### Usage Examples
 
 ```bash
-# Standard fast testing (default: no proofs, skip init, 200 iterations)
-node src/fuzz-local.mjs contracts/MyContract.ts
+# Standard fast testing (default: no proofs, with init, 200 iterations)
+node src/fuzz-o1js.mjs contracts/MyContract.ts
 
 # Full comprehensive testing with proofs and init
-COMPILE=1 SKIP_INIT=0 node src/fuzz-local.mjs contracts/MyContract.ts
+COMPILE=1 node src/fuzz-o1js.mjs contracts/MyContract.ts
 
 # Quick development testing with fewer iterations
-FUZZ_RUNS=50 node src/fuzz-local.mjs contracts/MyContract.ts
+FUZZ_RUNS=50 node src/fuzz-o1js.mjs contracts/MyContract.ts
 
 # Intensive testing for critical contracts
-FUZZ_RUNS=1000 COMPILE=1 node src/fuzz-local.mjs contracts/MyContract.ts
+FUZZ_RUNS=1000 COMPILE=1 node src/fuzz-o1js.mjs contracts/MyContract.ts
 
 # Test contract initialization without proofs
-SKIP_INIT=0 node src/fuzz-local.mjs contracts/MyContract.ts
+SKIP_INIT=0 node src/fuzz-o1js.mjs contracts/MyContract.ts
+
+# Skip initialization for contracts that don't need it
+SKIP_INIT=1 node src/fuzz-o1js.mjs contracts/MyContract.ts
 ```
 
 ## 🔧 Advanced Usage
@@ -155,8 +169,8 @@ export class MyContract extends SmartContract {
 
 ### Understanding Results
 
-- **✅ Passed**: Method executed successfully without errors (shows iteration number)
-- **❌ Failed**: Method threw an error (shows detailed error message and iteration number)  
+- **✅ Passed**: Method executed successfully without errors (shows iteration number and input values)
+- **❌ Failed**: Method threw an error   
 - **⏭️ Skipped**: Method uses unsupported parameter types (summary count only)
 
 ### Interpreting Error Messages
@@ -167,6 +181,15 @@ The fuzzer now provides detailed error information to help debug contract issues
 - **Validation Errors**: Shows custom error messages (e.g., `Insufficient balance!`, `Contract is not active!`)
 - **Type Conversion Issues**: Shows o1js-specific errors (e.g., `x.toString() was called on a variable field element`)
 - **Authorization Errors**: Shows transaction signing issues
+
+### State Management
+
+Fuzzhead properly handles contract state:
+
+- **State Initialization**: Calls `init()` method when available to set up initial state
+- **State Persistence**: Maintains state across multiple method calls within the same fuzzing session
+- **State Consistency**: Uses `requireEquals()` patterns to ensure state consistency
+- **Proof-Disabled Mode**: Handles state initialization differently when proofs are disabled
 
 ## 🐛 Troubleshooting
 
@@ -182,9 +205,16 @@ The fuzzer now provides detailed error information to help debug contract issues
 2. **"Invalid fee excess" errors**
    - **Solution**: Use existing test accounts (automatically handled in current version)
 
-3. **All methods skipped**
+3. **"Authorization does not match" errors**
+   - **Solution**: Use `COMPILE=0` for faster testing or `SKIP_INIT=1` for contracts with complex init methods
+
+4. **All methods skipped**
    - **Reason**: Contract uses custom types not supported by the fuzzer
    - **Solution**: This is expected behavior for domain-specific contracts
+
+5. **Terminal hanging/floating**
+   - **Solution**: The fuzzer now includes timeout protection and better error handling to prevent hanging
+
 ## 🔗 Links
 
 - [o1js Documentation](https://docs.minaprotocol.com/zkapps/o1js)
