@@ -93,7 +93,6 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
 
     // Get number of fuzz runs from environment variable, default to 200
     const numFuzzRuns = parseInt(process.env.FUZZ_RUNS || '200');
-    outputLogs.push(`Running ${numFuzzRuns} fuzz iterations per method`);
 
     // AST for methods/decorators
     const program = ts.createProgram([sourceTsPath], {
@@ -132,8 +131,6 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
 
     findSmartContractClasses(sourceFileForAst);
 
-    outputLogs.push(`Available in module: ${Object.keys(targetModule).join(', ')}`);
-
     for (const { name: className, declaration } of allSmartContractClasses) {
 
         // Try to get the class from the module
@@ -167,7 +164,6 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
         const proofsEnabled = process.env.COMPILE === '1'; // default: proofs OFF
         const shouldCompile = proofsEnabled;
         try {
-            outputLogs.push(`- ${shouldCompile ? 'Compiling' : 'Skipping compile'} ${className}...`);
             if (shouldCompile) {
                 await ZkappClass.compile();
                 outputLogs.push(`- Compilation successful.`);
@@ -212,11 +208,10 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
             }
 
             const instance = new ZkappClass(zkAppAddress);
-            outputLogs.push(`- Instantiated ${className} successfully.`);
 
             const initMethodInfo = methodInfos.find(m => m.name === 'init');
 
-            // 1) Deploy in its own transaction
+            // Deploy in its own transaction
             const deployTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
                 instance.deploy({ zkappKey: zkAppPrivateKey });
                 // Set verification key from compiled contract only if proofs are enabled
@@ -229,7 +224,7 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
             await deployTxn.sign([deployerKey, zkAppPrivateKey]).send();
             outputLogs.push(`- Deployed ${className} to local Mina.`);
 
-            // 2) Call init (if present) in a separate transaction
+            // Call init (if present) in a separate transaction
             if (initMethodInfo && process.env.SKIP_INIT === '0') { // default: skip init
                 const mockArgs = initMethodInfo.node.parameters.map(p => {
                     const tName = p.type?.getText(sourceFileForAst) || '';
@@ -278,9 +273,13 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                 let skippedCount = 0;
 
                 outputLogs.push(`- Starting fuzzing of ${executeList.length} method(s)...`);
+                outputLogs.push(``);
 
                 for (const info of executeList) {
+
+                    outputLogs.push(``);
                     outputLogs.push(`- Fuzzing method: ${info.name}`);
+
                     for (let i = 0; i < numFuzzRuns; i++) {
                         const mockArgs = info.node.parameters.map(p => {
                             const tName = p.type?.getText(sourceFileForAst) || '';
@@ -303,7 +302,6 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                                 outputLogs.push(`  ✅ ${className}.${info.name}() PASSED on iteration ${i + 1} with args: [${argsStr}]`);
                             } else {
                                 failedCount++;
-                                // outputLogs.push(`  ❌ ${className}.${info.name}() FAILED on iteration ${i + 1}: ${result.error}`);
                             }
                         }
                     }
