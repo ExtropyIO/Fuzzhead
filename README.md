@@ -12,7 +12,8 @@ A comprehensive fuzzing tool for testing Mina blockchain smart contracts built w
 - **Flexible Testing Modes** - Supports both proof-enabled and proof-disabled testing
 - **Enhanced Error Reporting** - Shows detailed error messages for failed tests to aid debugging
 - **Input Value Logging** - Shows successful test inputs to understand contract behavior
-- **State Management** - Properly handles contract state initialization and persistence
+- **Unified State Management** - Handles contract initialization for both proof modes
+- **Parameterless Method Skipping** - Automatically skips methods with no input parameters
 
 ## 🚀 Quick Start
 
@@ -68,23 +69,18 @@ Methods with unsupported custom types are gracefully skipped with clear reportin
 ```
 Fuzzing file: success-test.ts
 --------------------------------------------------
-Running 3 fuzz iterations per method
-Available in module: SuccessTestContract
 ✅ Found SmartContract: SuccessTestContract
 --------------------------------------------------
-- Skipping compile SuccessTestContract...
 - Running with proofs disabled (COMPILE=0).
-- Instantiated SuccessTestContract successfully.
 - Deployed SuccessTestContract to local Mina.
+- Skipping init() when proofs disabled to avoid authorization issues.
+- Note: Some methods may fail due to uninitialized state - this is expected for fuzzing.
 - Starting fuzzing of 5 method(s)...
+
 - Fuzzing method: increment
-  ✅ SuccessTestContract.increment() PASSED on iteration 1 with args: [15642306456140377162899274593397233099325979169677499799018088248912831241930]
-  ✅ SuccessTestContract.increment() PASSED on iteration 2 with args: [17832682169112135381898627975876494676133537861074740613827092748443352213016]
-  ✅ SuccessTestContract.increment() PASSED on iteration 3 with args: [20188935582657851009759262452091366309231774932170315181923662941721428845912]
-- Fuzzing method: addToTotal
-  ✅ SuccessTestContract.addToTotal() PASSED on iteration 1 with args: [180348]
-  ✅ SuccessTestContract.addToTotal() PASSED on iteration 2 with args: [855373]
-  ✅ SuccessTestContract.addToTotal() PASSED on iteration 3 with args: [461443]
+  (No individual success logs - only failures are shown)
+
+- Skipping method: toggleActive (no input parameters)
 
 🏁 Fuzzing complete:
    ✅ 12 runs passed
@@ -93,21 +89,36 @@ Available in module: SuccessTestContract
    🔄 3 iterations per method
 ```
 
-<!-- ### Failure Case with Detailed Errors
+### Failure Case with Detailed Errors
 ```
 Fuzzing file: fail-test.ts
 --------------------------------------------------
+✅ Found SmartContract: FailTestContract
+--------------------------------------------------
+- Running with proofs disabled (COMPILE=0).
+- Deployed FailTestContract to local Mina.
+- Skipping init() when proofs disabled to avoid authorization issues.
+- Note: Some methods may fail due to uninitialized state - this is expected for fuzzing.
+- Starting fuzzing of 10 method(s)...
+
+- Fuzzing method: alwaysFails
   ❌ FailTestContract.alwaysFails() FAILED on iteration 1: Field.assertEquals(): 741211 != 999999999
-  ❌ FailTestContract.withdraw() FAILED on iteration 1: Insufficient balance!
-  ✅ FailTestContract.divisionTest() PASSED on iteration 1
+
+- Fuzzing method: requireActive
   ❌ FailTestContract.requireActive() FAILED on iteration 1: Contract is not active!
+  Bool.assertTrue(): false != true
+
+- Skipping method: toggleActive (no input parameters)
+
+- Fuzzing method: restrictedAccess
+  ❌ FailTestContract.restrictedAccess() FAILED on iteration 1: fromBase58Check: invalid checksum
 
 🏁 Fuzzing complete:
-   ✅ 120 runs passed
-   ❌ 680 runs failed
-   📊 Total: 800 runs across 10 method(s)
-   🔄 80 iterations per method
-``` -->
+   ✅ 10 runs passed
+   ❌ 35 runs failed
+   📊 Total: 45 runs across 10 method(s)
+   🔄 5 iterations per method
+```
 
 ## ⚙️ Configuration Options
 
@@ -117,28 +128,39 @@ Fuzzing file: fail-test.ts
 | ----------- | -------------- | ----------------------------------------------------------------- |
 | `FUZZ_RUNS` | `200`          | Number of fuzz iterations per method                              |
 | `COMPILE`   | `0` (disabled) | Set to `1` to enable proof compilation (slower but comprehensive) |
-| `SKIP_INIT` | `0` (disabled) | Set to `1` to skip the contract's `init()` method                 |
+| `SKIP_INIT` | `1` (disabled) | Set to `0` to force init() execution (only works with COMPILE=1)  |
+
+### Testing Modes
+
+#### Fast Mode (`COMPILE=0`) - Default
+- **Speed**: Fast execution, no proof compilation
+- **Init Behavior**: Skips `init()` to avoid authorization issues
+- **Use Case**: Quick development testing, finding edge cases
+- **Expected**: Some methods may fail due to uninitialized state (this is good for fuzzing!)
+
+#### Comprehensive Mode (`COMPILE=1`)
+- **Speed**: Slower execution due to proof generation
+- **Init Behavior**: Calls `init()` properly with full proving
+- **Use Case**: Thorough testing with proper state initialization
+- **Expected**: More methods should pass due to proper initialization
 
 ### Usage Examples
 
 ```bash
-# Standard fast testing (default: no proofs, with init, 200 iterations)
+# Standard fast testing (default: no proofs, skip init, 200 iterations)
 node src/fuzz-o1js.mjs contracts/MyContract.ts
 
 # Full comprehensive testing with proofs and init
-COMPILE=1 node src/fuzz-o1js.mjs contracts/MyContract.ts
+COMPILE=1 SKIP_INIT=0 node src/fuzz-o1js.mjs contracts/MyContract.ts
 
 # Quick development testing with fewer iterations
 FUZZ_RUNS=50 node src/fuzz-o1js.mjs contracts/MyContract.ts
 
 # Intensive testing for critical contracts
-FUZZ_RUNS=1000 COMPILE=1 node src/fuzz-o1js.mjs contracts/MyContract.ts
+FUZZ_RUNS=1000 COMPILE=1 SKIP_INIT=0 node src/fuzz-o1js.mjs contracts/MyContract.ts
 
-# Test contract initialization without proofs
-SKIP_INIT=0 node src/fuzz-o1js.mjs contracts/MyContract.ts
-
-# Skip initialization for contracts that don't need it
-SKIP_INIT=1 node src/fuzz-o1js.mjs contracts/MyContract.ts
+# Test with proofs but skip init (if init has issues)
+COMPILE=1 SKIP_INIT=1 node src/fuzz-o1js.mjs contracts/MyContract.ts
 ```
 
 ## 🔧 Advanced Usage
@@ -167,53 +189,69 @@ export class MyContract extends SmartContract {
 }
 ```
 
+3. **Parameterless Methods** (automatically skipped):
+```typescript
+export class MyContract extends SmartContract {
+  @method async toggleActive() {
+    // This method will be skipped - no input parameters to fuzz
+  }
+}
+```
+
 ### Understanding Results
 
-- **✅ Passed**: Method executed successfully without errors (shows iteration number and input values)
-- **❌ Failed**: Method threw an error   
-- **⏭️ Skipped**: Method uses unsupported parameter types (summary count only)
+- **✅ Passed**: Method executed successfully without errors (counted in summary, not logged individually)
+- **❌ Failed**: Method threw an error (shows detailed error message)
+- **⏭️ Skipped**: Method uses unsupported parameter types or has no parameters
 
 ### Interpreting Error Messages
 
-The fuzzer now provides detailed error information to help debug contract issues:
+The fuzzer provides detailed error information to help debug contract issues:
 
 - **Assertion Failures**: Shows expected vs actual values (e.g., `Field.assertEquals(): 741211 != 999999999`)
 - **Validation Errors**: Shows custom error messages (e.g., `Insufficient balance!`, `Contract is not active!`)
 - **Type Conversion Issues**: Shows o1js-specific errors (e.g., `x.toString() was called on a variable field element`)
 - **Authorization Errors**: Shows transaction signing issues
+- **State Issues**: Shows uninitialized state errors (expected in fast mode)
 
 ### State Management
 
-Fuzzhead properly handles contract state:
+Fuzzhead uses a unified approach for state management:
 
-- **State Initialization**: Calls `init()` method when available to set up initial state
-- **State Persistence**: Maintains state across multiple method calls within the same fuzzing session
-- **State Consistency**: Uses `requireEquals()` patterns to ensure state consistency
-- **Proof-Disabled Mode**: Handles state initialization differently when proofs are disabled
+#### Fast Mode (`COMPILE=0`)
+- **Init Behavior**: Skips `init()` to avoid authorization issues
+- **State**: Contract starts with default uninitialized state
+- **Expected**: Some methods fail due to uninitialized state (this is valuable for fuzzing!)
+- **Use Case**: Fast iteration, finding edge cases and error conditions
+
+#### Comprehensive Mode (`COMPILE=1`)
+- **Init Behavior**: Calls `init()` in a transaction with proper proving
+- **State**: Contract is properly initialized with expected state
+- **Expected**: More methods should pass due to proper initialization
+- **Use Case**: Thorough validation with realistic contract state
 
 ## 🐛 Troubleshooting
 
 ### Common Issues
 
-1. **"ENOENT: plonk_wasm_bg.wasm"**
-   - **Solution**: Use Node.js 20 and reinstall dependencies
-   ```bash
-   rm -rf node_modules package-lock.json
-   npm install
-   ```
+1. **"Authorization does not match" errors**
+   - **Solution**: Use `COMPILE=0` for fast testing or `COMPILE=1` for comprehensive testing
+   - **Note**: This is expected behavior - the fuzzer handles this automatically
 
-2. **"Invalid fee excess" errors**
-   - **Solution**: Use existing test accounts (automatically handled in current version)
+2. **All methods failing due to uninitialized state**
+   - **Expected in Fast Mode**: This is normal behavior when `COMPILE=0`
+   - **Solution**: Use `COMPILE=1` for proper state initialization
 
-3. **"Authorization does not match" errors**
-   - **Solution**: Use `COMPILE=0` for faster testing or `SKIP_INIT=1` for contracts with complex init methods
+3. **Compilation errors with invalid base58 keys**
+   - **Solution**: Fix the contract code (invalid base58 strings cause compilation to fail)
+   - **Workaround**: Use `COMPILE=0` to test other methods
 
 4. **All methods skipped**
    - **Reason**: Contract uses custom types not supported by the fuzzer
    - **Solution**: This is expected behavior for domain-specific contracts
 
 5. **Terminal hanging/floating**
-   - **Solution**: The fuzzer now includes timeout protection and better error handling to prevent hanging
+   - **Solution**: The fuzzer now includes better error handling to prevent hanging
 
 ## 🔗 Links
 
