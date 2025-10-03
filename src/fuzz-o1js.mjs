@@ -224,26 +224,41 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
             await deployTxn.sign([deployerKey, zkAppPrivateKey]).send();
             outputLogs.push(`- Deployed ${className} to local Mina.`);
 
-            // Call init (if present) in a separate transaction
-            if (initMethodInfo && process.env.SKIP_INIT === '0') { // default: skip init
+            // Simplified init handling - accept that state may not be initialized
+            if (initMethodInfo && process.env.SKIP_INIT !== '1') {
                 const mockArgs = initMethodInfo.node.parameters.map(p => {
                     const tName = p.type?.getText(sourceFileForAst) || '';
                     return generateMockValue(p.type?.kind ?? 131, tName);
                 });
-                if (!mockArgs.includes(null)) {
-                    const initTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
-                        if (!proofsEnabled) instance.requireSignature();
-                        await instance.init.apply(instance, mockArgs);
-                    });
-                    if (proofsEnabled) await initTxn.prove?.();
-                    const initKeys = proofsEnabled ? [deployerKey] : [deployerKey, zkAppPrivateKey];
-                    await initTxn.sign(initKeys).send();
-                    outputLogs.push(`- Ran init() in a separate transaction.`);
+
+                // Always call init, even if it has no parameters
+                if (mockArgs.length === 0 || !mockArgs.includes(null)) {
+                    try {
+                        if (proofsEnabled) {
+                            // When proofs are enabled, call init in a transaction with proper proving
+                            const initTxn = await Mina.transaction({ sender: deployerAccount, fee: 0 }, async () => {
+                                await instance.init.apply(instance, mockArgs);
+                            });
+                            await initTxn.prove();
+                            await initTxn.sign([deployerKey]).send();
+                            outputLogs.push(`- Ran init() in a transaction with proofs.`);
+                        } else {
+                            // When proofs are disabled, skip init entirely to avoid authorization issues
+                            outputLogs.push(`- Skipping init() when proofs disabled to avoid authorization issues.`);
+                            outputLogs.push(`- Note: Some methods may fail due to uninitialized state - this is expected for fuzzing.`);
+                        }
+
+                    } catch (e) {
+                        outputLogs.push(`- Error during init: ${e.message}`);
+                        outputLogs.push(`- Continuing with fuzzing - some methods may fail due to uninitialized state.`);
+                    }
                 } else {
                     outputLogs.push(`  - Skipping init() due to un-mockable params.`);
                 }
             } else if (process.env.SKIP_INIT === '1') {
                 outputLogs.push(`- SKIP_INIT=1: skipping init()`);
+            } else {
+                outputLogs.push(`- No init() method found.`);
             }
 
             // Execute @method-decorated (excluding init)
@@ -276,7 +291,7 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                 outputLogs.push(``);
 
                 for (const info of executeList) {
-                    
+
                     if (info.node.parameters.length === 0) {
                         outputLogs.push(``);
                         outputLogs.push(`- Skipping method: ${info.name} (no input parameters)`);
@@ -305,8 +320,9 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                                     }
                                     return String(arg);
                                 }).join(', ');
-                                outputLogs.push(`  ✅ ${className}.${info.name}() PASSED on iteration ${i + 1} with args: [${argsStr}]`);
+                                // outputLogs.push(`  ✅ ${className}.${info.name}() PASSED on iteration ${i + 1} with args: [${argsStr}]`);
                             } else {
+                                outputLogs.push(`  ❌ ${className}.${info.name}() FAILED on iteration ${i + 1}: ${result.error}`);
                                 failedCount++;
                             }
                         }
