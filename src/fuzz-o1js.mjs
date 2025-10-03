@@ -276,6 +276,12 @@ async function analyseAndRun(sourceTsPath, bundlePath) {
                 outputLogs.push(``);
 
                 for (const info of executeList) {
+                    
+                    if (info.node.parameters.length === 0) {
+                        outputLogs.push(``);
+                        outputLogs.push(`- Skipping method: ${info.name} (no input parameters)`);
+                        continue;
+                    }
 
                     outputLogs.push(``);
                     outputLogs.push(`- Fuzzing method: ${info.name}`);
