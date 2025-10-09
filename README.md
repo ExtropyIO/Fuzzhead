@@ -1,265 +1,69 @@
-# Fuzzhead - o1js Smart Contract Fuzzer
-
-A comprehensive fuzzing tool for testing Mina blockchain smart contracts built with [o1js](https://docs.minaprotocol.com/zkapps/o1js). Fuzzhead automatically discovers, deploys, and tests smart contract methods with randomized inputs to identify potential vulnerabilities and edge cases.
+# Fuzzhead
 
-## ✨ Features
-
-- **Automatic Contract Discovery** - Scans TypeScript files and identifies o1js SmartContract classes
-- **Method Detection** - Finds all `@method`-decorated functions for comprehensive testing
-- **Configurable Fuzz Testing** - Run multiple iterations per method with random inputs (default: 200 iterations)
-- **Local Blockchain Simulation** - Uses Mina LocalBlockchain for safe, isolated testing
-- **Smart Type Generation** - Generates valid mock data for standard o1js types (`Field`, `Bool`, `UInt32`, `PublicKey`, etc.)
-- **Flexible Testing Modes** - Supports both proof-enabled and proof-disabled testing
-- **Enhanced Error Reporting** - Shows detailed error messages for failed tests to aid debugging
-- **Input Value Logging** - Shows successful test inputs to understand contract behavior
-- **Unified State Management** - Handles contract initialization for both proof modes
-- **Parameterless Method Skipping** - Automatically skips methods with no input parameters
+A next-generation, multi-layered security fuzzing framework for privacy-preserving blockchains.
 
-## 🚀 Quick Start
+`Fuzzhead` is a specialized security tool designed to uncover critical vulnerabilities in the complex architectures of modern privacy-preserving blockchains. Standard EVM fuzzers are essential for testing application logic but are blind to the unique attack surfaces introduced by zero-knowledge (ZK) circuits and Trusted Execution Environments (TEEs). `Fuzzhead` provides a holistic, three-pronged security analysis to secure the entire stack, from dApps down to the core protocol.
 
-### Prerequisites
+## Project Status
 
-- Node.js 20+ (recommended for o1js compatibility)
-- npm or yarn
+**Current Focus: The Horizen Ecosystem**
 
-### Installation
+We have successfully completed a foundational Proof of Concept (POC) of our fuzzing engine for the Mina ecosystem. This initial version validated our core approach to security analysis and demonstrated our team's capability to build effective, specialized fuzzing tools for complex cryptographic systems.
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd Fuzzhead
+Building on the lessons learned from the Mina POC, we are now directing our full attention to developing `Fuzzhead` for the **Horizen ecosystem**. Our goal is to create a new, more advanced tool specifically tailored to the unique architecture of Horizen's L3 appchain on Base, which heavily utilizes both ZK-proofs and TEEs.
 
-# Install dependencies
-npm install
+## The `Fuzzhead` Architecture
 
-# Verify installation (run without arguments to see usage)
-node src/fuzz-o1js.mjs
-```
+`Fuzzhead` is designed with a modular, three-engine architecture to provide comprehensive, full-stack security coverage for Horizen developers.
 
-### Basic Usage
+### 1. Application Layer Engine (EVM)
 
-```bash
-# Test a smart contract (200 iterations per method, fast mode)
-node src/fuzz-o1js.mjs path/to/YourContract.ts
+This engine provides robust, property-based fuzzing for the on-chain components of an application.
+*   **Target:** EVM smart contracts written in **Solidity**.
+*   **Purpose:** To detect common on-chain vulnerabilities such as re-entrancy, integer overflows/underflows, access control issues, and broken business logic invariants.
+*   **Methodology:** Leverages property-based testing, similar to established tools like Echidna and Foundry, to automatically generate transaction sequences that attempt to violate predefined security properties.
 
-# Enable full proof compilation (slower but more comprehensive)
-COMPILE=1 node src/fuzz-o1js.mjs path/to/YourContract.ts
+### 2. Cryptographic Layer Engine (ZK-Circuits)
 
-# Customize number of iterations
-FUZZ_RUNS=50 node src/fuzz-o1js.mjs path/to/YourContract.ts
+This is the core innovation of `Fuzzhead`. This engine targets the off-chain ZK circuits that are the foundation of Horizen's privacy technology.
+*   **Targets:** Zero-knowledge circuits written in **Circom** and **Noir**.
+*   **Purpose:** To uncover deep, logic-based flaws unique to ZK circuits, such as soundness vulnerabilities (allowing an invalid proof to be accepted) and completeness vulnerabilities (preventing a valid proof from being generated).
+*   **Methodology:** Implements cutting-edge techniques like **program mutation** (inspired by zkFuzz) and **metamorphic testing** (inspired by Circuzz) to find under-constrained or incorrectly implemented circuit logic.
 
-# Skip contract initialization
-SKIP_INIT=1 node src/fuzz-o1js.mjs path/to/YourContract.ts
-```
+### 3. Protocol Layer Engine (TEE)
 
-## 📋 Supported Types
+This engine provides a unique security analysis of Horizen's core protocol, targeting an attack surface that is completely invisible to other tools.
+*   **Target:** The interface between the Horizen node software and the **op-enclave running within AWS Nitro Trusted Execution Environments (TEEs)**.
+*   **Purpose:** To ensure the integrity of Horizen's core state transition and attestation mechanism. It tests for vulnerabilities where malformed inputs could crash the enclave, produce an invalid state, or trick the enclave into signing an incorrect attestation.
+*   **Methodology:** Employs input fuzzing and state transition analysis to probe the boundary between the node and the secure enclave.
 
-Fuzzhead automatically generates test data for these o1js types:
+## Roadmap for Horizen
 
-- **Field types**: `Field`, `Bool`, `UInt8`, `UInt32`, `UInt64`
-- **Cryptographic types**: `PublicKey`, `PrivateKey`, `Signature`, `Group`, `Scalar`
-- **Primitive types**: `string`, `number`, `boolean`
-- **Arrays**: Any array of supported types (e.g., `Field[]`, `Bool[]`)
+Our development is focused on delivering a powerful, open-source tool for the Horizen community.
 
-Methods with unsupported custom types are gracefully skipped with clear reporting.
+*   **Phase 1: MVP Release**
+    *   Develop and open-source the core `Fuzzhead` framework.
+    *   Release the Application Layer Engine for Solidity contracts.
+    *   Release an alpha version of the Cryptographic Layer Engine with initial support for Circom.
 
-## 🎯 Example Output
+*   **Phase 2: Integration & Expansion**
+    *   Partner with projects building on Horizen for pilot testing and integration feedback.
+    *   Expand the Cryptographic Layer Engine to include full support for Noir.
+    *   Develop and release a prototype of the Protocol Layer Engine for TEE testing.
 
-### Success Case with Input Logging
-```
-Fuzzing file: success-test.ts
---------------------------------------------------
-✅ Found SmartContract: SuccessTestContract
---------------------------------------------------
-- Running with proofs disabled (COMPILE=0).
-- Deployed SuccessTestContract to local Mina.
-- Skipping init() when proofs disabled to avoid authorization issues.
-- Note: Some methods may fail due to uninitialized state - this is expected for fuzzing.
-- Starting fuzzing of 5 method(s)...
+*   **Phase 3: Full-Featured Release & Community Adoption**
+    *   Achieve widespread adoption within the Horizen developer community.
+    *   Release the complete, stable version of all three engines.
+    *   Establish `Fuzzhead` as a standard security tool in the Horizen developer stack.
 
-- Fuzzing method: increment
-  (No individual success logs - only failures are shown)
+## Getting Started
 
-- Skipping method: toggleActive (no input parameters)
+Detailed installation and usage instructions for the Horizen-focused version of `Fuzzhead` will be available here upon the release of our MVP.
 
-🏁 Fuzzing complete:
-   ✅ 12 runs passed
-   ❌ 3 runs failed
-   📊 Total: 15 runs across 5 method(s)
-   🔄 3 iterations per method
-```
+## Contributing
 
-### Failure Case with Detailed Errors
-```
-Fuzzing file: fail-test.ts
---------------------------------------------------
-✅ Found SmartContract: FailTestContract
---------------------------------------------------
-- Running with proofs disabled (COMPILE=0).
-- Deployed FailTestContract to local Mina.
-- Skipping init() when proofs disabled to avoid authorization issues.
-- Note: Some methods may fail due to uninitialized state - this is expected for fuzzing.
-- Starting fuzzing of 10 method(s)...
+We welcome contributions from the security and developer communities! If you are interested in contributing to `Fuzzhead`, please read our `CONTRIBUTING.md` for details on our code of conduct and the process for submitting pull requests.
 
-- Fuzzing method: alwaysFails
-  ❌ FailTestContract.alwaysFails() FAILED on iteration 1: Field.assertEquals(): 741211 != 999999999
-
-- Fuzzing method: requireActive
-  ❌ FailTestContract.requireActive() FAILED on iteration 1: Contract is not active!
-  Bool.assertTrue(): false != true
+## License
 
-- Skipping method: toggleActive (no input parameters)
-
-- Fuzzing method: restrictedAccess
-  ❌ FailTestContract.restrictedAccess() FAILED on iteration 1: fromBase58Check: invalid checksum
-
-🏁 Fuzzing complete:
-   ✅ 10 runs passed
-   ❌ 35 runs failed
-   📊 Total: 45 runs across 10 method(s)
-   🔄 5 iterations per method
-```
-
-## ⚙️ Configuration Options
-
-### Environment Variables
-
-| Variable    | Default        | Description                                                       |
-| ----------- | -------------- | ----------------------------------------------------------------- |
-| `FUZZ_RUNS` | `200`          | Number of fuzz iterations per method                              |
-| `COMPILE`   | `0` (disabled) | Set to `1` to enable proof compilation (slower but comprehensive) |
-| `SKIP_INIT` | `1` (disabled) | Set to `0` to force init() execution (only works with COMPILE=1)  |
-
-### Testing Modes
-
-#### Fast Mode (`COMPILE=0`) - Default
-- **Speed**: Fast execution, no proof compilation
-- **Init Behavior**: Skips `init()` to avoid authorization issues
-- **Use Case**: Quick development testing, finding edge cases
-- **Expected**: Some methods may fail due to uninitialized state (this is good for fuzzing!)
-
-#### Comprehensive Mode (`COMPILE=1`)
-- **Speed**: Slower execution due to proof generation
-- **Init Behavior**: Calls `init()` properly with full proving
-- **Use Case**: Thorough testing with proper state initialization
-- **Expected**: More methods should pass due to proper initialization
-
-### Usage Examples
-
-```bash
-# Standard fast testing (default: no proofs, skip init, 200 iterations)
-node src/fuzz-o1js.mjs contracts/MyContract.ts
-
-# Full comprehensive testing with proofs and init
-COMPILE=1 SKIP_INIT=0 node src/fuzz-o1js.mjs contracts/MyContract.ts
-
-# Quick development testing with fewer iterations
-FUZZ_RUNS=50 node src/fuzz-o1js.mjs contracts/MyContract.ts
-
-# Intensive testing for critical contracts
-FUZZ_RUNS=1000 COMPILE=1 SKIP_INIT=0 node src/fuzz-o1js.mjs contracts/MyContract.ts
-
-# Test with proofs but skip init (if init has issues)
-COMPILE=1 SKIP_INIT=1 node src/fuzz-o1js.mjs contracts/MyContract.ts
-```
-
-## 🔧 Advanced Usage
-
-### Testing Custom Contracts
-
-1. **Standard o1js Contract** (recommended):
-```typescript
-import { SmartContract, method, Field, Bool } from 'o1js';
-
-export class MyContract extends SmartContract {
-  @method async myMethod(value: Field, flag: Bool) {
-    // Contract logic here
-  }
-}
-```
-
-2. **With Custom Types** (methods will be skipped):
-```typescript
-class CustomStruct extends Struct({ data: Field }) {}
-
-export class MyContract extends SmartContract {
-  @method async myMethod(custom: CustomStruct) {
-    // This method will be skipped due to custom type
-  }
-}
-```
-
-3. **Parameterless Methods** (automatically skipped):
-```typescript
-export class MyContract extends SmartContract {
-  @method async toggleActive() {
-    // This method will be skipped - no input parameters to fuzz
-  }
-}
-```
-
-### Understanding Results
-
-- **✅ Passed**: Method executed successfully without errors (counted in summary, not logged individually)
-- **❌ Failed**: Method threw an error (shows detailed error message)
-- **⏭️ Skipped**: Method uses unsupported parameter types or has no parameters
-
-### Interpreting Error Messages
-
-The fuzzer provides detailed error information to help debug contract issues:
-
-- **Assertion Failures**: Shows expected vs actual values (e.g., `Field.assertEquals(): 741211 != 999999999`)
-- **Validation Errors**: Shows custom error messages (e.g., `Insufficient balance!`, `Contract is not active!`)
-- **Type Conversion Issues**: Shows o1js-specific errors (e.g., `x.toString() was called on a variable field element`)
-- **Authorization Errors**: Shows transaction signing issues
-- **State Issues**: Shows uninitialized state errors (expected in fast mode)
-
-### State Management
-
-Fuzzhead uses a unified approach for state management:
-
-#### Fast Mode (`COMPILE=0`)
-- **Init Behavior**: Skips `init()` to avoid authorization issues
-- **State**: Contract starts with default uninitialized state
-- **Expected**: Some methods fail due to uninitialized state (this is valuable for fuzzing!)
-- **Use Case**: Fast iteration, finding edge cases and error conditions
-
-#### Comprehensive Mode (`COMPILE=1`)
-- **Init Behavior**: Calls `init()` in a transaction with proper proving
-- **State**: Contract is properly initialized with expected state
-- **Expected**: More methods should pass due to proper initialization
-- **Use Case**: Thorough validation with realistic contract state
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **"Authorization does not match" errors**
-   - **Solution**: Use `COMPILE=0` for fast testing or `COMPILE=1` for comprehensive testing
-   - **Note**: This is expected behavior - the fuzzer handles this automatically
-
-2. **All methods failing due to uninitialized state**
-   - **Expected in Fast Mode**: This is normal behavior when `COMPILE=0`
-   - **Solution**: Use `COMPILE=1` for proper state initialization
-
-3. **Compilation errors with invalid base58 keys**
-   - **Solution**: Fix the contract code (invalid base58 strings cause compilation to fail)
-   - **Workaround**: Use `COMPILE=0` to test other methods
-
-4. **All methods skipped**
-   - **Reason**: Contract uses custom types not supported by the fuzzer
-   - **Solution**: This is expected behavior for domain-specific contracts
-
-5. **Terminal hanging/floating**
-   - **Solution**: The fuzzer now includes better error handling to prevent hanging
-
-## 🔗 Links
-
-- [o1js Documentation](https://docs.minaprotocol.com/zkapps/o1js)
-- [Mina Protocol](https://minaprotocol.com/)
-- [Extropy](https://www.extropy.io/)
-- [X](https://x.com/Extropy)
-
----
-
-**Built for the Mina ecosystem** 🚀
+This project is licensed under the MIT License - see the `LICENSE.md` file for details.
