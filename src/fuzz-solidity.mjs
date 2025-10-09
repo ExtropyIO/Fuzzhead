@@ -1,0 +1,1 @@
+// Add compatibility with Horizen smart contracts. Will focus on Solidity as this is the most common language for smart contracts on EVM chains.
