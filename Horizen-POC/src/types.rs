@@ -1,4 +1,5 @@
 // type definitions
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SolidityType {
@@ -21,12 +22,40 @@ pub enum SolidityValue {
 }
 
 #[derive(Debug, Clone)]
+pub struct MethodParameter {
+    pub name: String,
+    pub param_type: SolidityType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MethodVisibility {
+    Public,
+    External,
+    Internal,
+    Private,
+}
+
+
+#[derive(Debug, Clone)]
 pub struct ContractMethod {
     pub name: String,
     pub parameters: Vec<MethodParameter>,
     pub visibility: MethodVisibility,
-    pub state_mutability: StateMutability,
     pub is_constructor: bool,
     pub is_fallback: bool,
     pub is_receive: bool,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct FuzzSummary {
+    pub total_passed: usize,
+    pub total_failed: usize,
+    pub total_skipped: usize,
+}
+
+#[derive(Debug, Clone)]
+pub enum TestResult {
+    Passed,
+    Failed(String),
 }

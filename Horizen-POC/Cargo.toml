@@ -1,0 +1,40 @@
+[package]
+name = "horizen-solidity-fuzzer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Core dependencies
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+tokio = { version = "1.0", features = ["full"] }
+futures = "0.3"
+
+# Solidity parsing and compilation
+solang-parser = "0.3"
+
+# Fuzzing and testing
+arbitrary = "1.0"
+proptest = "1.0"
+quickcheck = "1.0"
+
+# Random number generation
+rand = "0.8"
+rand_chacha = "0.3"
+
+# Logging and debugging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# File I/O and path handling
+walkdir = "2.3"
+glob = "0.3"
+
+# HTTP client for contract verification
+reqwest = { version = "0.11", features = ["json"] }
+
+[dev-dependencies]
+tempfile = "3.0"
