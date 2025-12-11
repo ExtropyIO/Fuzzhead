@@ -80,7 +80,14 @@ async function executeContractMethod(name, instance, methodName, args, sender, s
             await txn.prove();
         }
         const keys = proofsEnabled ? [senderKey] : [senderKey, zkAppPrivateKey].filter(Boolean);
-        await txn.sign(keys).send();
+
+        // Add timeout for method execution send()
+        const sendPromise = txn.sign(keys).send();
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Method transaction send timeout after 15 seconds')), 15000)
+        );
+
+        await Promise.race([sendPromise, timeoutPromise]);
         return { status: 'passed' };
     } catch (e) {
         return { status: 'failed', error: e.message };

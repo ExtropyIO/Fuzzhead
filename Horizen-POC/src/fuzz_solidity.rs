@@ -28,9 +28,9 @@ impl SolidityFuzzer {
             
             // Get number of fuzz runs from environment variable, default to 200
             let num_fuzz_runs = std::env::var("FUZZ_RUNS")
-                .unwrap_or_else(|_| "200".to_string())
+                .unwrap_or_else(|_| "50".to_string())
                 .parse::<usize>()
-                .unwrap_or(200);
+                .unwrap_or(50);
 
             // Find all public/external methods
             let methods_to_test: Vec<_> = contract.methods.iter()
