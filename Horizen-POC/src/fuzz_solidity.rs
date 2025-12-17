@@ -151,7 +151,9 @@ impl SolidityFuzzer {
                             method_passed += 1;
                         }
                         TestResult::Failed(error) => {
-                            println!("  ❌ {}.{}() FAILED on iteration {}: {}", contract.name, method.name, i + 1, error);
+                            let args_display = self.format_args_for_display(&mock_args);
+                            println!("  ❌ {}.{}({}) FAILED on iteration {}: {}", 
+                                contract.name, method.name, args_display, i + 1, error);
                             method_failed += 1;
                         }
                     }
@@ -357,6 +359,72 @@ impl SolidityFuzzer {
         
         Ok(encoded)
     }
+    
+    /// Format arguments for human-readable display in error messages
+    fn format_args_for_display(&self, args: &[SolidityValue]) -> String {
+        args.iter()
+            .map(|arg| self.format_value_for_display(arg))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+    
+    /// Format a single value for display
+    fn format_value_for_display(&self, value: &SolidityValue) -> String {
+        match value {
+            SolidityValue::Uint8(v) => format!("{}", v),
+            SolidityValue::Uint16(v) => format!("{}", v),
+            SolidityValue::Uint32(v) => format!("{}", v),
+            SolidityValue::Uint64(v) => format!("{}", v),
+            SolidityValue::Uint128(v) => format!("{}", v),
+            SolidityValue::Uint256(v) => format!("{}", v),
+            SolidityValue::Int8(v) => format!("{}", v),
+            SolidityValue::Int16(v) => format!("{}", v),
+            SolidityValue::Int32(v) => format!("{}", v),
+            SolidityValue::Int64(v) => format!("{}", v),
+            SolidityValue::Int128(v) => format!("{}", v),
+            SolidityValue::Int256(v) => format!("{}", v),
+            SolidityValue::Address(addr) => {
+                if addr.len() > 10 {
+                    format!("{}...{}", &addr[..5], &addr[addr.len()-2..])
+                } else {
+                    addr.clone()
+                }
+            },
+            SolidityValue::Bool(b) => format!("{}", b),
+            SolidityValue::String(s) => {
+                if s.len() > 30 {
+                    format!("\"{}...\"", &s[..27])
+                } else {
+                    format!("\"{}\"", s)
+                }
+            },
+            SolidityValue::Bytes(bs) => {
+                if bs.len() > 8 {
+                    format!("0x{}...", hex::encode(&bs[..8]))
+                } else {
+                    format!("0x{}", hex::encode(bs))
+                }
+            },
+            SolidityValue::Bytes1(bs) => format!("0x{}", hex::encode(bs)),
+            SolidityValue::Bytes2(bs) => format!("0x{}", hex::encode(bs)),
+            SolidityValue::Bytes4(bs) => format!("0x{}", hex::encode(bs)),
+            SolidityValue::Bytes8(bs) => format!("0x{}", hex::encode(bs)),
+            SolidityValue::Bytes16(bs) => format!("0x{}...", hex::encode(&bs[..8])),
+            SolidityValue::Bytes32(bs) => format!("0x{}...", hex::encode(&bs[..8])),
+            SolidityValue::Array(values) => {
+                if values.len() > 3 {
+                    format!("[{} items]", values.len())
+                } else {
+                    let items = values.iter()
+                        .map(|v| self.format_value_for_display(v))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("[{}]", items)
+                }
+            },
+            SolidityValue::Struct(_) => "struct{...}".to_string(),
+        }
+    }
 
     fn generate_random_value(&mut self, sol_type: &SolidityType) -> SolidityValue {
         match sol_type {
@@ -366,7 +434,49 @@ impl SolidityFuzzer {
             SolidityType::Uint64 => SolidityValue::Uint64(self.rng.gen()),
             SolidityType::Uint128 => SolidityValue::Uint128(self.rng.gen()),
             SolidityType::Uint256 => {
-                let val: u128 = self.rng.gen();
+                let strategy = self.rng.gen_range(0..100);
+                let val = match strategy {
+                    // 20% - Very small values (0-100) - good for: counters, indices, percentages, small IDs
+                    0..=19 => self.rng.gen_range(0..101),
+                    // 20% - Small-medium values (100-100,000) - good for: amounts, IDs, array sizes
+                    20..=39 => self.rng.gen_range(100..100_001),
+                    // 15% - Medium-large values (100k-10M) - good for: larger amounts, timestamps (recent years)
+                    40..=54 => self.rng.gen_range(100_000..10_000_001),
+                    // 10% - Edge cases: boundaries that often cause bugs
+                    55..=64 => {
+                        match self.rng.gen_range(0..6) {
+                            0 => 0,                    // Minimum value
+                            1 => 1,                    // Smallest non-zero
+                            2 => 2,                    // Common threshold
+                            3 => u32::MAX as u128,     // 32-bit boundary
+                            4 => u64::MAX as u128,     // 64-bit boundary
+                            _ => u128::MAX,            // Maximum uint256 (2^256-1)
+                        }
+                    },
+                    // 15% - Powers of 2 (useful for: bit flags, sizes, testing overflow at boundaries)
+                    65..=79 => {
+                        let power = self.rng.gen_range(0..256); // 2^0 to 2^255
+                        if power < 128 {
+                            1u128 << power
+                        } else {
+                            // For powers > 127, use a large value close to max
+                            u128::MAX >> self.rng.gen_range(0..10)
+                        }
+                    },
+                    // 10% - Powers of 10 (useful for: decimal math, price calculations)
+                    80..=89 => {
+                        let power = self.rng.gen_range(0..39); // 10^0 to 10^38 (uint256 max is ~10^77)
+                        if power <= 18 {
+                            10u128.pow(power)
+                        } else {
+                            // For larger powers, use multiplier
+                            let base = self.rng.gen_range(1..1000);
+                            (base as u128) * 10u128.pow(18)
+                        }
+                    },
+                    // 10% - Large random values (stress testing, overflow detection)
+                    _ => self.rng.gen::<u128>(),
+                };
                 SolidityValue::Uint256(val.to_string())
             },
             SolidityType::Int8 => SolidityValue::Int8(self.rng.gen()),
@@ -375,23 +485,76 @@ impl SolidityFuzzer {
             SolidityType::Int64 => SolidityValue::Int64(self.rng.gen()),
             SolidityType::Int128 => SolidityValue::Int128(self.rng.gen()),
             SolidityType::Int256 => {
-                let val: i128 = self.rng.gen();
+                // General-purpose signed integer generation
+                let strategy = self.rng.gen_range(0..100);
+                let val = match strategy {
+                    // 25% - Small values around zero
+                    0..=24 => self.rng.gen_range(-100..101),
+                    // 25% - Medium positive and negative values
+                    25..=49 => self.rng.gen_range(-100_000..100_001),
+                    // 15% - Edge cases for signed integers
+                    50..=64 => {
+                        match self.rng.gen_range(0..6) {
+                            0 => 0,                       // Zero
+                            1 => 1,                       // Positive one
+                            2 => -1,                      // Negative one
+                            3 => i32::MAX as i128,        // 32-bit max
+                            4 => i32::MIN as i128,        // 32-bit min
+                            _ => i64::MAX as i128,        // 64-bit max
+                        }
+                    },
+                    // 15% - Negative boundary testing
+                    65..=79 => {
+                        let positive = self.rng.gen_range(1..1_000_000);
+                        -(positive as i128)
+                    },
+                    // 20% - Large random values (both positive and negative)
+                    _ => self.rng.gen::<i64>() as i128,
+                };
                 SolidityValue::Int256(val.to_string())
             },
             SolidityType::Address => {
-                let addr = format!("0x{:040x}", self.rng.gen::<u128>());
+                // General-purpose address generation
+                let strategy = self.rng.gen_range(0..100);
+                let addr = match strategy {
+                    // 25% - Use known test accounts (good for testing with actual funded/privileged accounts)
+                    0..=24 => {
+                        let test_accounts = [
+                            "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", // (deployer)
+                            "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+                            "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+                            "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+                            "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+                        ];
+                        test_accounts[self.rng.gen_range(0..test_accounts.len())].to_string()
+                    },
+                    // 10% - Zero address (important edge case: often used for burn, null checks, special logic)
+                    25..=34 => "0x0000000000000000000000000000000000000000".to_string(),
+                    // 5% - Address(1), Address(2) etc - common for precompiles and special addresses
+                    35..=39 => {
+                        let low_addr = self.rng.gen_range(1..20);
+                        format!("0x{:040x}", low_addr)
+                    },
+                    // 60% - Random addresses (tests arbitrary interactions, access control, etc.)
+                    _ => format!("0x{:040x}", self.rng.gen::<u128>() & 0xFFFFFFFFFFFFFFFFFFFFu128),
+                };
                 SolidityValue::Address(addr)
             },
             SolidityType::Bool => SolidityValue::Bool(self.rng.gen()),
             SolidityType::String => {
-                let length = self.rng.gen_range(0..100);
+                // Generate more realistic ASCII strings instead of random unicode
+                let length = self.rng.gen_range(0..50);
                 let chars: String = (0..length)
-                    .map(|_| self.rng.gen::<char>())
+                    .map(|_| {
+                        // Printable ASCII characters (space to ~)
+                        (self.rng.gen_range(32..127)) as u8 as char
+                    })
                     .collect();
                 SolidityValue::String(chars)
             },
             SolidityType::Bytes => {
-                let length = self.rng.gen_range(0..1000);
+                // Smaller, more realistic byte arrays
+                let length = self.rng.gen_range(0..256);
                 let bytes: Vec<u8> = (0..length).map(|_| self.rng.gen()).collect();
                 SolidityValue::Bytes(bytes)
             },
