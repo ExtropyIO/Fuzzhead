@@ -19,17 +19,17 @@ pub struct EventInfo {
 }
 
 pub struct SolidityParser {
-    contracts: HashMap<String, ContractInfo>,
+    _contracts: HashMap<String, ContractInfo>,
 }
 
 impl SolidityParser {
     pub fn new() -> Self {
         Self {
-            contracts: HashMap::new(),
+            _contracts: HashMap::new(),
         }
     }
 
-    pub fn parse_contract(&mut self, source: &str, filename: &str) -> Result<Vec<ContractInfo>, anyhow::Error> {
+    pub fn parse_contract(&mut self, source: &str, _filename: &str) -> Result<Vec<ContractInfo>, anyhow::Error> {
         // Later this should use the solang-parser API properly
         let mut contracts = Vec::new();
         

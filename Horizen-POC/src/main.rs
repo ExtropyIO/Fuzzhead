@@ -4,9 +4,12 @@ use std::path::Path;
 use tracing::{error, warn};
 use crate::fuzz_solidity::SolidityFuzzer;
 
-mod types;
-mod ast_parser;
-mod fuzz_solidity;
+pub mod types;
+pub mod ast_parser;
+pub mod fuzz_solidity;
+pub mod anvil_executor;
+pub mod contract_compiler;
+pub mod constructor;
 
 #[derive(Parser)]
 #[command(name = "horizen-solidity-fuzzer")]
@@ -24,6 +27,10 @@ struct Cli {
     /// Enable verbose logging
     #[arg(short, long)]
     verbose: bool,
+    
+    /// RPC URL for Anvil fork (default: http://localhost:8545)
+    #[arg(long, default_value = "http://localhost:8545")]
+    fork_url: String,
 }
 
 
@@ -56,18 +63,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn process_single_file(_cli: &Cli, file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn process_single_file(cli: &Cli, file_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     let source = fs::read_to_string(file_path)?;
-    let mut fuzzer = SolidityFuzzer::new();
+    let mut fuzzer = SolidityFuzzer::new(&cli.fork_url).await?;
 
     // Run fuzzing
-    let _summary = fuzzer.fuzz_contract(&source, file_path.to_str().unwrap())?;
+    let _summary = fuzzer.fuzz_contract(&source, file_path.to_str().unwrap()).await?;
     
     Ok(())
 }
 
-async fn process_directory(_cli: &Cli, dir_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn process_directory(cli: &Cli, dir_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut total_passed = 0;
     let mut total_failed = 0;
@@ -80,9 +87,9 @@ async fn process_directory(_cli: &Cli, dir_path: &Path) -> Result<(), Box<dyn st
     for file_path in solidity_files {
         
         let source = fs::read_to_string(&file_path)?;
-        let mut fuzzer = SolidityFuzzer::new();
+        let mut fuzzer = SolidityFuzzer::new(&cli.fork_url).await?;
 
-        match fuzzer.fuzz_contract(&source, file_path.to_str().unwrap()) {
+        match fuzzer.fuzz_contract(&source, file_path.to_str().unwrap()).await {
             Ok(summary) => {
                 total_passed += summary.total_passed;
                 total_failed += summary.total_failed;
