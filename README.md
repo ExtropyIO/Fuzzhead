@@ -2,15 +2,15 @@
 
 A next-generation, multi-layered security fuzzing framework for privacy-preserving blockchains.
 
-`Fuzzhead` is a specialized security tool designed to uncover critical vulnerabilities in the complex architectures of modern privacy-preserving blockchains. Standard EVM fuzzers are essential for testing application logic but are blind to the unique attack surfaces introduced by zero-knowledge (ZK) circuits and Trusted Execution Environments (TEEs). `Fuzzhead` provides a holistic, three-pronged security analysis to secure the entire stack, from dApps down to the core protocol.
+`Fuzzhead` is a specialised security tool designed to uncover critical vulnerabilities in the complex architectures of modern privacy-preserving blockchains. Standard EVM fuzzers are essential for testing application logic but are blind to the unique attack surfaces introduced by zero-knowledge (ZK) circuits and Trusted Execution Environments (TEEs). `Fuzzhead` provides a holistic, three-pronged security analysis to secure the entire stack, from dApps down to the core protocol.
 
 ## Project Status
 
 **Current Focus: The Horizen Ecosystem**
 
-We have successfully completed a foundational Proof of Concept (POC) of our fuzzing engine for the Mina ecosystem. This initial version validated our core approach to security analysis and demonstrated our team's capability to build effective, specialized fuzzing tools for complex cryptographic systems.
+We have successfully completed a foundational Proof of Concept (POC) of our fuzzing engine for the Mina ecosystem. This initial version validated our core approach to security analysis and demonstrated our team's capability to build effective, specialised fuzzing tools for complex cryptographic systems.
 
-Building on the lessons learned from the Mina POC, we are now directing our full attention to developing `Fuzzhead` for the **Horizen ecosystem**. Our goal is to create a new, more advanced tool specifically tailored to the unique architecture of Horizen's L3 appchain on Base, which heavily utilizes both ZK-proofs and TEEs.
+Building on the lessons learned from the Mina POC, we are now directing our full attention to developing `Fuzzhead` for the **Horizen ecosystem**. Our goal is to create a new, more advanced tool specifically tailored to the unique architecture of Horizen's L3 appchain on Base, which heavily utilises both ZK-proofs and TEEs.
 
 ## The `Fuzzhead` Architecture
 
@@ -202,10 +202,10 @@ Enter value for _maxWithdrawPerDay (uint256): 1000
 ### Understanding the Output
 
 - **✅ Passed**: The transaction executed successfully on the EVM
-- **❌ Failed**: The transaction reverted with an error (expected behavior for invalid inputs)
+- **❌ Failed**: The transaction reverted with an error (expected behaviour for invalid inputs)
 - **⏭️ Skipped**: Test cases skipped due to unsupported parameter types
 
-**Note:** Failed test cases are expected and indicate that the fuzzer is correctly testing edge cases and invalid inputs. The fuzzer generates random inputs, and many will naturally fail due to business logic constraints (e.g., insufficient balance, access control, etc.).
+**Note:** Failed test cases are expected and indicate that the fuzzer is correctly testing edge cases and invalid inputs. The fuzzer generates random inputs, and many will naturally fail due to business logic constraints (for example, insufficient balance, access control, and similar constraints).
 
 ### Troubleshooting
 

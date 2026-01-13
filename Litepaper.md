@@ -2,7 +2,7 @@
 ## Abstract
 
 Fuzzhead is a next-generation, multi-layered security fuzzing framework designed to provide holistic security assurance for the Horizen ecosystem. Standard EVM security tools are ill-equipped to handle the novel attack surfaces introduced by Horizen's advanced architecture, which combines EVM-compatible smart contracts, zero-knowledge (ZK) circuits, and a Trusted Execution Environment (TEE)-based protocol layer. 
-Logic bugs in these complex systems can lead to catastrophic failures, including the theft of assets or the complete loss of privacy guarantees. Fuzzhead addresses this critical security gap with a specialized, three-pronged analysis engine that targets the application, cryptographic, and protocol layers of the Horizen stack. 
+Logic bugs in these complex systems can lead to catastrophic failures, including the theft of assets or the complete loss of privacy guarantees. Fuzzhead addresses this critical security gap with a specialised, three-pronged analysis engine that targets the application, cryptographic, and protocol layers of the Horizen stack. 
 By providing this full-stack security analysis, Fuzzhead aims to become a foundational public good that de-risks development, builds developer confidence, and accelerates the creation of secure, reliable, and truly private applications on Horizen.
 
 ### 1. Introduction: The Security Gap in Privacy-Preserving Blockchains
@@ -14,24 +14,24 @@ The Cryptographic Layer: Deep, logic-based flaws in the ZK circuits (written in 
 
 The Protocol Layer: Vulnerabilities at the interface between the node software and the TEE, which could compromise the integrity of the core state transition mechanism itself.
 
-Existing EVM fuzzers like Echidna and Foundry are excellent for the application layer but are blind to the cryptographic and protocol layers . This leaves the most critical and complex components of Horizen's stack without specialized, automated security tooling.
+Existing EVM fuzzers such as Echidna and Foundry are excellent for the application layer but are blind to the cryptographic and protocol layers. This leaves the most critical and complex components of Horizen's stack without specialised, automated security tooling.
 
 ### 2. The Fuzzhead Solution: A Multi-Layered Fuzzing Framework
-Fuzzhead is designed from the ground up to address this challenge. It is a unified security tool that combines three specialized engines, each targeting a different layer of the Horizen stack.
+Fuzzhead is designed from the ground up to address this challenge. It is a unified security tool that combines three specialised engines, each targeting a different layer of the Horizen stack.
 
 Engine 1: Application Layer (EVM): A property-based fuzzer for Solidity smart contracts.
 
-Engine 2: Cryptographic Layer (ZK-Circuits): A specialized fuzzer for ZK circuits written in Circom and Noir.
+Engine 2: Cryptographic Layer (ZK-Circuits): A specialised fuzzer for ZK circuits written in Circom and Noir.
 
 Engine 3: Protocol Layer (TEE): A protocol-level fuzzer that tests the interaction between the Horizen node and the op-enclave.
 
-This holistic approach ensures that developers can analyze their entire application, from the user-facing smart contracts down to the core cryptographic primitives, within a single, cohesive framework.
+This holistic approach ensures that developers can analyse their entire application, from the user-facing smart contracts down to the core cryptographic primitives, within a single, cohesive framework.
 
 ### 3. Technical Architecture
 Fuzzhead will be built in Rust for its performance, memory safety, and robust support for cryptographic libraries. Its architecture is modular, consisting of the three core engines.
 
 #### 3.1 Application Layer Engine (EVM)
-This engine provides property-based fuzzing for Solidity smart contracts. It functions similarly to established tools like Echidna, allowing developers to define security properties or invariants (e.g., "a user can never withdraw more than they deposited") and then automatically generates thousands of transaction sequences to try and violate those properties .
+This engine provides property-based fuzzing for Solidity smart contracts. It functions similarly to established tools such as Echidna, allowing developers to define security properties or invariants (for example, "a user can never withdraw more than they deposited") and then automatically generates thousands of transaction sequences to attempt to violate those properties.
 
 ##### Target: 
 Solidity smart contracts on the Horizen EVM .

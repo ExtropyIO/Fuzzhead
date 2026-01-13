@@ -49,7 +49,7 @@
 **Dependencies:** None  
 **Time Taken:** Completed
 
-**Why First:** ✅ Without real EVM execution, the fuzzer cannot detect actual vulnerabilities or verify real contract behavior. **This is now complete.**
+**Why First:** ✅ Without real EVM execution, the fuzzer cannot detect actual vulnerabilities or verify real contract behaviour. **This is now complete.**
 
 ---
 
