@@ -58,12 +58,173 @@ Our development is focused on delivering a powerful, open-source tool for the Ho
 
 ## Getting Started
 
-Detailed installation and usage instructions for the Horizen-focused version of `Fuzzhead` will be available here upon the release of our MVP.
+### Prerequisites
+
+Before running the fuzzer, ensure you have the following installed:
+
+1. **Rust** (1.70 or later)
+   ```bash
+   # Install Rust via rustup
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+2. **Foundry** (for Anvil)
+   ```bash
+   # Install Foundry
+   curl -L https://foundry.paradigm.xyz | bash
+   foundryup
+   ```
+
+3. **Node.js** (v16 or later) - Required for Solidity compilation
+   ```bash
+   # Install via nvm (recommended) or your system package manager
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+   nvm install 18
+   ```
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-org/fuzzhead.git
+   cd fuzzhead/Horizen-POC
+   ```
+
+2. **Build the fuzzer:**
+   ```bash
+   cargo build --release
+   ```
+
+   The binary will be available at `target/release/horizen-solidity-fuzzer`
+
+### Running the Fuzzer
+
+#### Step 1: Start Anvil
+
+The fuzzer requires a running Anvil instance to execute contracts. Start Anvil in a separate terminal:
+
+```bash
+# Start Anvil on default port (8545)
+anvil
+
+# Or start with a fork of mainnet (optional)
+anvil --fork-url https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+```
+
+#### Step 2: Run the Fuzzer
+
+**Fuzz a single contract:**
+```bash
+cargo run --release -- \
+  --input test-contracts/VaultContract.sol \
+  --test-cases 50 \
+  --fork-url http://localhost:8545
+```
+
+**Fuzz all contracts in a directory:**
+```bash
+cargo run --release -- \
+  --input test-contracts/ \
+  --test-cases 100 \
+  --fork-url http://localhost:8545
+```
+
+**With verbose logging:**
+```bash
+cargo run --release -- \
+  --input test-contracts/VaultContract.sol \
+  --test-cases 50 \
+  --verbose
+```
+
+#### Command Line Options
+
+- `--input` / `-i`: Path to Solidity contract file or directory (required)
+- `--test-cases` / `-t`: Number of test cases to generate per method (default: 100)
+- `--fork-url`: RPC URL for Anvil fork (default: http://localhost:8545)
+- `--verbose` / `-v`: Enable verbose logging
+
+### Example: Fuzzing VaultContract
+
+Here's a complete example of fuzzing the `VaultContract`:
+
+**1. Start Anvil:**
+```bash
+anvil
+```
+
+**2. Run the fuzzer:**
+```bash
+cd Horizen-POC
+cargo run --release -- --input test-contracts/VaultContract.sol --test-cases 50
+```
+
+**3. Example Output:**
+
+```
+Fuzzing contract: VaultContract
+--------------------------------------------------
+- Contract compiled successfully (1234 bytes)
+- Constructor requires 2 parameter(s)
+➤ Deployment requires arguments for 'VaultContract':
+Enter value for _minDeposit (uint256): 100
+Enter value for _maxWithdrawPerDay (uint256): 1000
+✔ Arguments captured successfully!
+- Constructor arguments encoded (64 bytes)
+- Contract deployed at: 0x5FbDB2315678afecb367f032d93F642f64180aa3
+- Starting fuzzing of 5 method(s)...
+
+- Fuzzing method: deposit
+  ❌ VaultContract.deposit(50) FAILED on iteration 3: Transaction reverted: Below minimum deposit
+  ❌ VaultContract.deposit(0x0000...0000) FAILED on iteration 12: Transaction reverted: Below minimum deposit
+
+- Fuzzing method: withdraw
+  ❌ VaultContract.withdraw(5000) FAILED on iteration 7: Transaction reverted: Insufficient balance
+  ❌ VaultContract.withdraw(1500) FAILED on iteration 23: Transaction reverted: Exceeds daily limit
+
+- Fuzzing method: setWhitelist
+  ❌ VaultContract.setWhitelist(0x7099...79C8, true) FAILED on iteration 15: Transaction reverted: Not owner
+
+- Fuzzing method: setPaused
+  ❌ VaultContract.setPaused(false) FAILED on iteration 8: Transaction reverted: Not owner
+
+- Fuzzing method: updateLimits
+  ❌ VaultContract.updateLimits(500, 2000) FAILED on iteration 2: Transaction reverted: Not owner
+
+🏁 Fuzzing complete:
+   ✅ 235 runs passed
+   ❌ 15 runs failed
+   ⏭️  0 runs skipped (unsupported parameter types)
+   📊 Total: 250 runs across 5 method(s)
+   🔄 50 iterations per method
+```
+
+### Understanding the Output
+
+- **✅ Passed**: The transaction executed successfully on the EVM
+- **❌ Failed**: The transaction reverted with an error (expected behavior for invalid inputs)
+- **⏭️ Skipped**: Test cases skipped due to unsupported parameter types
+
+**Note:** Failed test cases are expected and indicate that the fuzzer is correctly testing edge cases and invalid inputs. The fuzzer generates random inputs, and many will naturally fail due to business logic constraints (e.g., insufficient balance, access control, etc.).
+
+### Troubleshooting
+
+**"Connection refused" or "Failed to connect to Anvil"**
+- Ensure Anvil is running: `anvil`
+- Check the `--fork-url` matches your Anvil instance
+
+**"Contract compilation failed"**
+- Ensure Solidity compiler is available (via Foundry)
+- Check that your contract has valid Solidity syntax
+
+**"Deployment failed"**
+- Verify Anvil is running and accessible
+- Check constructor arguments are valid for your contract
+
+**"EVM execution failed"**
+- Ensure Anvil is running and not crashed
+- Check network connectivity to the fork URL
 
 ## Contributing
 
-We welcome contributions from the security and developer communities! If you are interested in contributing to `Fuzzhead`, please read our `CONTRIBUTING.md` for details on our code of conduct and the process for submitting pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the `LICENSE.md` file for details.
+We welcome contributions from the security and developer communities! If you are interested in contributing to `Fuzzhead`, submit a pull request.
