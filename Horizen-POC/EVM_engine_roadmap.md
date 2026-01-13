@@ -8,47 +8,56 @@
 - Random input generation for basic types
 - Basic CLI interface
 - Test contract structure
-
-### ❌ Critical Gap
-- **Execution is currently simulated** - No real EVM integration
-- Cannot detect actual vulnerabilities
-- Cannot verify real contract behavior
+- **Real EVM execution via Anvil fork** ✅
+- Contract deployment with constructor parameter support
+- Real method call execution on Anvil fork
+- Revert reason and error message capture
+- Gas usage tracking
+- State change tracking via Anvil transactions
 
 ---
 
 ## Next Steps (Priority Order)
 
-### 1. Real EVM Execution Integration ⚠️ CRITICAL
+### 1. Real EVM Execution Integration ✅ COMPLETE
 
-**Status:** Not Started  
-**Priority:** Highest - Blocks all real vulnerability detection
+**Status:** ✅ Completed (via Anvil fork)  
+**Priority:** ~~Highest - Blocks all real vulnerability detection~~ (Completed)
 
 **Tasks:**
-- [ ] Choose EVM runtime library (recommended: `revm` or `foundry-evm`)
-- [ ] Add EVM dependency to `Cargo.toml`
-- [ ] Create EVM execution module (`src/evm_executor.rs`)
-- [ ] Implement contract deployment to test EVM
-- [ ] Implement method call execution with generated parameters
-- [ ] Capture real execution results:
-  - [ ] Revert reasons and error messages
-  - [ ] Gas usage tracking
-  - [ ] Return values
-  - [ ] State changes
-- [ ] Implement state snapshot/restore for efficient fuzzing
-- [ ] Replace simulated execution in `execute_test_case()` method
-- [ ] Test with existing test contracts
+- [x] Choose EVM runtime library (implemented via Anvil fork executor)
+- [x] Add EVM dependency to `Cargo.toml` (using `reqwest` for Anvil RPC)
+- [x] Create EVM execution module (`src/anvil_executor.rs`)
+- [x] Implement contract deployment to test EVM (via Anvil fork)
+- [x] Implement method call execution with generated parameters
+- [x] Capture real execution results:
+  - [x] Revert reasons and error messages
+  - [x] Gas usage tracking
+  - [x] Return values (via transaction receipts)
+  - [x] State changes (via Anvil transaction execution)
+- [ ] Implement state snapshot/restore for efficient fuzzing (future optimization)
+- [x] Replace simulated execution in `execute_test_case()` method
+- [x] Test with existing test contracts (VaultContract tested successfully)
+- [x] Constructor parameter handling and encoding
+
+**Implementation Notes:**
+- Used Anvil fork executor (`src/anvil_executor.rs`) instead of direct `revm` integration
+- Supports constructor parameters via interactive prompts
+- Real transaction execution via `eth_sendTransaction` and `eth_getTransactionReceipt`
+- Handles revert reasons and error messages from failed transactions
 
 **Dependencies:** None  
-**Estimated Time:** 1-2 weeks
+**Time Taken:** Completed
 
-**Why First:** Without real EVM execution, the fuzzer cannot detect actual vulnerabilities or verify real contract behavior.
+**Why First:** ✅ Without real EVM execution, the fuzzer cannot detect actual vulnerabilities or verify real contract behavior. **This is now complete.**
 
 ---
 
-### 2. Property-Based Testing Framework
+### 2. Property-Based Testing Framework 🎯 NEXT PRIORITY
 
 **Status:** Not Started  
-**Priority:** High - Core differentiator per litepaper
+**Priority:** High - Core differentiator per litepaper  
+**Current Focus:** This is the next step to implement
 
 **Tasks:**
 - [ ] Design property definition DSL (YAML or Rust macros)
@@ -68,8 +77,9 @@
 - [ ] Create example property files for test contracts
 - [ ] CLI flag to specify property file (`--properties`)
 
-**Dependencies:** EVM Integration (#1)  
-**Estimated Time:** 2-3 weeks
+**Dependencies:** ✅ EVM Integration (#1) - COMPLETE  
+**Estimated Time:** 2-3 weeks  
+**Ready to Start:** Yes - all dependencies met
 
 **Why Second:** This is the core innovation that differentiates Fuzzhead from basic fuzzers - property-based testing like Echidna.
 
@@ -98,7 +108,7 @@
 - [ ] Sequence execution and state tracking
 - [ ] Property checking across transaction sequences
 
-**Dependencies:** EVM Integration (#1), Property Framework (#2)  
+**Dependencies:** ✅ EVM Integration (#1) - COMPLETE, Property Framework (#2) - Pending  
 **Estimated Time:** 2-3 weeks
 
 **Why Third:** Many critical vulnerabilities (re-entrancy, access control, business logic) only manifest in multi-transaction scenarios.
@@ -132,7 +142,7 @@
   - [ ] Vulnerability descriptions
   - [ ] Exploit proof-of-concept generation
 
-**Dependencies:** EVM Integration (#1), Multi-Transaction Sequences (#3)  
+**Dependencies:** ✅ EVM Integration (#1) - COMPLETE, Multi-Transaction Sequences (#3) - Pending  
 **Estimated Time:** 2-3 weeks
 
 **Why Fourth:** Automated vulnerability detection is a core value proposition, but requires real execution and sequences to be effective.
@@ -163,7 +173,7 @@
   - [ ] Named tuples
 - [ ] Replace "default" fallback with proper error handling
 
-**Dependencies:** EVM Integration (#1)  
+**Dependencies:** ✅ EVM Integration (#1) - COMPLETE  
 **Estimated Time:** 1-2 weeks
 
 **Why Fifth:** Real-world contracts use complex types. Current implementation returns "default" for unsupported types, limiting test coverage.
@@ -208,13 +218,15 @@
 
 ## Implementation Timeline
 
-### Phase 1: Foundation (Weeks 1-2)
+### Phase 1: Foundation ✅ COMPLETE
 - Focus: EVM Integration (#1)
-- Deliverable: Real contract execution working
+- Deliverable: Real contract execution working ✅
+- **Status:** Completed via Anvil fork executor
 
-### Phase 2: Core Features (Weeks 3-6)
+### Phase 2: Core Features 🎯 CURRENT PHASE (Weeks 3-6)
 - Focus: Property Framework (#2) + Multi-Transaction Sequences (#3)
 - Deliverable: Property-based fuzzing with transaction sequences
+- **Status:** Ready to begin - Step 2 (Property Framework) is next priority
 
 ### Phase 3: Detection (Weeks 7-9)
 - Focus: Vulnerability Detection (#4)
@@ -226,35 +238,39 @@
 
 ---
 
-## Quick Start: EVM Integration
+## ✅ EVM Integration - Implementation Summary
 
-### Step 1: Add Dependencies
+### What Was Implemented
 
-Add to `Cargo.toml`:
-```toml
-[dependencies]
-revm = "4.0"  # or foundry-evm
-alloy-sol-types = "0.5"  # For ABI encoding/decoding
-```
+**Approach:** Anvil Fork Executor (instead of direct `revm` integration)
 
-### Step 2: Create EVM Executor Module
+**Key Components:**
+1. **`src/anvil_executor.rs`** - Anvil RPC client for contract deployment and execution
+2. **`src/constructor.rs`** - Interactive constructor parameter handling
+3. **Updated `src/fuzz_solidity.rs`** - Real EVM execution via Anvil fork
 
-Create `src/evm_executor.rs`:
-- EVM instance management
-- Contract deployment
-- Method call execution
-- State management
+**Features:**
+- ✅ Contract deployment with constructor parameter support
+- ✅ Real transaction execution via `eth_sendTransaction`
+- ✅ Revert reason extraction from failed transactions
+- ✅ Gas usage tracking from transaction receipts
+- ✅ State change tracking through Anvil transactions
+- ✅ Multiple account support for testing access control
+- ✅ Nonce management for proper transaction sequencing
 
-### Step 3: Replace Simulated Execution
+**Dependencies Added:**
+- `reqwest` - HTTP client for Anvil RPC calls
+- `ethers` - ABI encoding/decoding and constructor handling
+- `dialoguer` - Interactive constructor parameter prompts
 
-Update `fuzz_solidity.rs`:
-- Replace `execute_test_case()` simulation
-- Use real EVM execution
-- Capture actual results
+**Testing:**
+- ✅ Successfully tested with `VaultContract.sol` (constructor with 2 parameters)
+- ✅ Real execution results captured
+- ✅ Error handling for deployment and execution failures
 
-### Step 4: Test
-
-Run against test contracts and verify real execution.
+**Next Steps:**
+- Consider adding state snapshot/restore for more efficient fuzzing
+- May want to add direct `revm` integration later for faster execution without RPC overhead
 
 ---
 
@@ -268,6 +284,7 @@ Run against test contracts and verify real execution.
 
 ---
 
-**Last Updated:** 2024  
-**Current Focus:** Step 1 - EVM Integration
+**Last Updated:** December 2024  
+**Current Focus:** Step 2 - Property-Based Testing Framework  
+**Recent Achievement:** ✅ Step 1 (EVM Integration) completed via Anvil fork executor with constructor parameter support
 

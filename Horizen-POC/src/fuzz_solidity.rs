@@ -39,55 +39,51 @@ impl SolidityFuzzer {
             let (contract_bytecode, contract_abi) = match self.compiler.compile_contract_with_abi(source_path, &contract.name) {
                 Ok((bytecode, abi)) => {
                     println!("- Contract compiled successfully ({} bytes)", bytecode.len());
-                    (Some(bytecode), Some(abi))
+                    (bytecode, abi)
                 }
                 Err(e) => {
-                    println!("- ⚠️  Compilation failed: {}", e);
-                    println!("- Continuing with simulated execution...");
-                    (None, None)
+                    eprintln!("❌ Compilation failed for contract {}: {}", contract.name, e);
+                    eprintln!("   Cannot proceed without compiled bytecode. Please fix compilation errors.");
+                    return Err(anyhow::anyhow!("Contract compilation failed: {}", e));
                 }
             };
             
-            // Deploy contract to Anvil fork if compilation succeeded
-            if let (Some(ref bytecode), Some(ref abi)) = (&contract_bytecode, &contract_abi) {
-                // Check if contract has constructor parameters
-                let constructor_args = if abi.constructor().is_some() && !abi.constructor().unwrap().inputs.is_empty() {
-                    println!("- Constructor requires {} parameter(s)", abi.constructor().unwrap().inputs.len());
-                    
-                    // Prompt user for constructor arguments
-                    match crate::constructor::prompt_for_constructor_args(abi, &contract.name) {
-                        Ok(tokens) => {
-                            match abi.constructor().unwrap().encode_input(bytecode.clone(), &tokens) {
-                                Ok(encoded_deployment) => {
-                                    let constructor_args_bytes = &encoded_deployment[bytecode.len()..];
-                                    println!("- Constructor arguments encoded ({} bytes)", constructor_args_bytes.len());
-                                    Some(constructor_args_bytes.to_vec())
-                                }
-                                Err(e) => {
-                                    println!("- ⚠️  Failed to encode constructor arguments: {}", e);
-                                    println!("- Attempting deployment without constructor args...");
-                                    None
-                                }
+            // Deploy contract to Anvil fork
+            // Check if contract has constructor parameters
+            let constructor_args = if contract_abi.constructor().is_some() && !contract_abi.constructor().unwrap().inputs.is_empty() {
+                println!("- Constructor requires {} parameter(s)", contract_abi.constructor().unwrap().inputs.len());
+                
+                // Prompt user for constructor arguments
+                match crate::constructor::prompt_for_constructor_args(&contract_abi, &contract.name) {
+                    Ok(tokens) => {
+                        match contract_abi.constructor().unwrap().encode_input(contract_bytecode.clone(), &tokens) {
+                            Ok(encoded_deployment) => {
+                                let constructor_args_bytes = &encoded_deployment[contract_bytecode.len()..];
+                                println!("- Constructor arguments encoded ({} bytes)", constructor_args_bytes.len());
+                                Some(constructor_args_bytes.to_vec())
+                            }
+                            Err(e) => {
+                                eprintln!("❌ Failed to encode constructor arguments: {}", e);
+                                return Err(anyhow::anyhow!("Constructor argument encoding failed: {}", e));
                             }
                         }
-                        Err(e) => {
-                            println!("- ⚠️  Failed to get constructor arguments: {}", e);
-                            println!("- Attempting deployment without constructor args...");
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-                
-                match self.anvil_executor.deploy_contract(&contract.name, bytecode, constructor_args.as_deref()).await {
-                    Ok(addr) => {
-                        println!("- Contract deployed at: {}", addr);
                     }
                     Err(e) => {
-                        println!("- ⚠️  Deployment failed: {}", e);
-                        return Err(anyhow::anyhow!("Deployment failed: {}", e));
+                        eprintln!("❌ Failed to get constructor arguments: {}", e);
+                        return Err(anyhow::anyhow!("Constructor argument input failed: {}", e));
                     }
+                }
+            } else {
+                None
+            };
+            
+            match self.anvil_executor.deploy_contract(&contract.name, &contract_bytecode, constructor_args.as_deref()).await {
+                Ok(addr) => {
+                    println!("- Contract deployed at: {}", addr);
+                }
+                Err(e) => {
+                    eprintln!("❌ Deployment failed: {}", e);
+                    return Err(anyhow::anyhow!("Contract deployment failed: {}", e));
                 }
             }
             
@@ -138,13 +134,8 @@ impl SolidityFuzzer {
                         continue;
                     }
 
-                    let result = if contract_bytecode.is_some() {
-                        // Try real Anvil fork execution
-                        self.execute_test_case_evm(&method.name, &mock_args, &contract).await
-                    } else {
-                        // Fall back to simulation
-                        self.execute_test_case_simulated(&method.name)
-                    };
+                    // Execute on Anvil fork - fail loudly if execution fails
+                    let result = self.execute_test_case_evm(&method.name, &mock_args, &contract).await;
                     
                     match result {
                         TestResult::Passed => {
@@ -197,7 +188,7 @@ impl SolidityFuzzer {
             }
         };
         
-        // Try to execute on Anvil fork
+        // Execute on Anvil fork - fail loudly if execution fails
         match self.anvil_executor.call_method(&contract.name, &method_signature, &encoded_args).await {
             Ok(execution_result) => {
                 let _execution_time = start_time.elapsed();
@@ -210,41 +201,10 @@ impl SolidityFuzzer {
                     TestResult::Failed(error_msg)
                 }
             }
-            Err(_e) => {
-                // If Anvil execution fails, fall back to simulation
-                self.execute_test_case_simulated(method_name)
+            Err(e) => {
+                // Fail loudly - no fallback to simulation
+                TestResult::Failed(format!("EVM execution failed: {}. Cannot proceed without real EVM execution.", e))
             }
-        }
-    }
-    
-    /// Fallback to simulated execution when EVM is not available
-    fn execute_test_case_simulated(&mut self, method_name: &str) -> TestResult {
-        let _gas_used = self.rng.gen_range(21000..1000000);
-        
-        // Simulate different outcomes based on method and parameters
-        let success_rate = match method_name {
-            "transfer" => 0.8,  // 80% success rate
-            "approve" => 0.9,   // 90% success rate
-            "mint" => 0.7,      // 70% success rate (might fail due to access control)
-            "withdraw" => 0.6,  // 60% success rate (might fail due to insufficient balance)
-            "deposit" => 0.95,  // 95% success rate
-            _ => 0.85,          // Default 85% success rate
-        };
-        
-        if self.rng.gen::<f64>() < success_rate {
-            TestResult::Passed
-        } else {
-            let error_messages = vec![
-                "Insufficient balance",
-                "Transfer failed",
-                "Unauthorized access",
-                "Invalid parameters",
-                "Contract reverted",
-                "Out of gas",
-                "Invalid operation"
-            ];
-            let error = error_messages[self.rng.gen_range(0..error_messages.len())].to_string();
-            TestResult::Failed(error)
         }
     }
     
