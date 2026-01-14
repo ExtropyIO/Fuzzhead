@@ -1,6 +1,9 @@
-
+target/
 .DS_Store
 node_modules
 build
 cache
 dist
+
+.env
+.fuzz

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Fuzzhead Web</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        textarea {
+            width: 80%;
+            height: 400px;
+            font-family: monospace;
+        }
+
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+        }
+
+        pre {
+            background-color: #f4f4f4;
+            border: 1px solid #ccc;
+            padding: 10px;
+            width: 80%;
+            min-height: 100px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Fuzzhead Web Interface</h1>
+    <textarea id="codeInput" placeholder="Paste your TypeScript code here..."></textarea>
+    <button id="runButton">Run Fuzzer</button>
+    <pre id="outputLogs">Logs will appear here...</pre>
+
+    <script>
+        const codeInput = document.getElementById('codeInput');
+        const runButton = document.getElementById('runButton');
+        const outputLogs = document.getElementById('outputLogs');
+
+
+        const API_ENDPOINT = `${process.env.API}`;
+
+        runButton.addEventListener('click', async () => {
+            outputLogs.textContent = 'Running...';
+            runButton.disabled = true;
+
+            try {
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        code: codeInput.value,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    outputLogs.textContent = result.output;
+                } else {
+                    outputLogs.textContent = `ERROR:\n${result.message}\n\n---LOGS---\n${result.output}`;
+                }
+
+            } catch (error) {
+                outputLogs.textContent = `Failed to connect to API: ${error.message}`;
+            } finally {
+                runButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>
