@@ -1,0 +1,3 @@
+[submodule "benchmarks/scone-bench"]
+	path = benchmarks/scone-bench
+	url = https://github.com/safety-research/SCONE-bench
