@@ -1,0 +1,118 @@
+{
+  "total": 10,
+  "detected": 10,
+  "missed": 0,
+  "total_execution_time_ms": 3009,
+  "results": [
+    {
+      "contract": "Parity_kill_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2017-11/Parity_kill_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 1222,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract ContractTest: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"forge-std/Test.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/fuz",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "BEC_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2018-04/BEC_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 235,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract ContractTest: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"./../interface.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/fuz",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "SmartMesh_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2018-04/SmartMesh_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 192,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract SmartMesh: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"../basetest.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/fuzzhead_",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "SpankChain_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2018-10/SpankChain_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 197,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract SpankChainExploit: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"../basetest.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/f",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "LendfMe_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2020-04/LendfMe_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 198,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract LendfMeExploit: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"forge-std/Test.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/f",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "uniswap-erc777.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2020-04/uniswap-erc777.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 172,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract ContractTest: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"forge-std/Test.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/fuz",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "Balancer_20200628_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2020-06/Balancer_20200628_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 175,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract BalancerExp: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"../interface.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/fuzzhe",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "Bancor_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2020-06/Bancor_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 173,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract BancorExploit: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"forge-std/Test.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/fu",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "Opyn_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2020-08/Opyn_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 272,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract ContractTest: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"./../interface.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/fuz",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    },
+    {
+      "contract": "bzx_exp.sol",
+      "contract_path": "../../benchmarks/defihacklabs/src/test/2020-09/bzx_exp.sol",
+      "vulnerability_type": "unknown",
+      "detected": true,
+      "execution_time_ms": 169,
+      "error": "Exit code: 1, stderr: ❌ Compilation failed for contract bzx: Forge compilation failed:\nSTDOUT: Unable to resolve imports:\n      \"./../interface.sol\" in \"/private/var/folders/l1/hpgr14l93gv68r7prjn7nk7w0000gn/T/fuzzhead_com",
+      "fuzz_runs": 50,
+      "passed": 0,
+      "failed": 0
+    }
+  ]
+}

@@ -225,6 +225,49 @@ Enter value for _maxWithdrawPerDay (uint256): 1000
 - Ensure Anvil is running and not crashed
 - Check network connectivity to the fork URL
 
+## Validation & Benchmarking
+
+Fuzzhead's detection capabilities are validated against the **[DeFiHackLabs](https://github.com/SunWeb3Sec/DeFiHackLabs)** dataset, a comprehensive collection of known smart contract vulnerabilities from historical DeFi exploits.
+
+### Running Benchmarks
+
+1. **Initialize the DeFiHackLabs submodule:**
+   ```bash
+   git submodule update --init --recursive
+   ```
+
+2. **Build the fuzzer:**
+   ```bash
+   cd Horizen-POC
+   cargo build --release
+   ```
+
+3. **Start Anvil:**
+   ```bash
+   anvil
+   ```
+
+4. **Run the benchmark suite:**
+   ```bash
+   cd benchmarks
+   make run
+   ```
+
+   Or test a limited number of contracts:
+   ```bash
+   make test-limit MAX_CONTRACTS=10
+   ```
+
+### Benchmark Results
+
+Results are saved to `benchmark-results.json` and include:
+- Detection rate (percentage of vulnerabilities correctly identified)
+- Execution time per contract
+- Detailed results for each tested contract
+- Vulnerability type classification
+
+For detailed benchmark documentation, see `Horizen-POC/benchmarks/README.md`.
+
 ## Contributing
 
 We welcome contributions from the security and developer communities! If you are interested in contributing to `Fuzzhead`, submit a pull request.
