@@ -115,22 +115,19 @@ async fn run_fuzzer_on_contract(
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     
+    // Check for compilation errors first - these are NOT vulnerabilities
+    let is_compilation_error = stderr.contains("Compilation failed") 
+        || stderr.contains("Unable to resolve imports")
+        || stderr.contains("forge compilation failed")
+        || stdout.contains("Compilation failed")
+        || stderr.contains("Contract compilation failed");
+    
     // Parse fuzzer output to determine results
     let mut detected = false;
     let mut passed = 0;
     let mut failed = 0;
     
-    // Look for indicators of vulnerability detection
-    if stdout.contains("FAILED") 
-        || stdout.contains("vulnerability")
-        || stdout.contains("revert")
-        || stdout.contains("reentrancy")
-        || stdout.contains("access control")
-        || stderr.contains("error") {
-        detected = true;
-    }
-    
-    // Try to extract pass/fail counts from output
+    // Try to extract pass/fail counts from output (only if fuzzer ran)
     for line in stdout.lines() {
         if line.contains("✅") && line.contains("runs passed") {
             if let Some(num) = extract_number(line) {
@@ -141,6 +138,22 @@ async fn run_fuzzer_on_contract(
             if let Some(num) = extract_number(line) {
                 failed = num;
             }
+        }
+    }
+    
+    // Only mark as detected if:
+    // 1. Fuzzer ran successfully (not a compilation error)
+    // 2. We have actual fuzzing results (passed + failed > 0)
+    // 3. There are failed test cases (indicating potential vulnerabilities)
+    if !is_compilation_error && (passed > 0 || failed > 0) {
+        // Look for indicators of vulnerability detection in successful runs
+        if failed > 0 
+            || stdout.contains("FAILED") 
+            || stdout.contains("vulnerability")
+            || stdout.contains("revert")
+            || stdout.contains("reentrancy")
+            || stdout.contains("access control") {
+            detected = true;
         }
     }
     
@@ -242,14 +255,29 @@ async fn main() -> Result<(), anyhow::Error> {
         
         match run_fuzzer_on_contract(contract, fuzzer_binary, &fork_url, test_cases).await {
             Ok(result) => {
-                if result.detected {
+                // Check if this was a compilation error
+                let is_compilation_error = result.error.as_ref()
+                    .map(|e| e.contains("Compilation failed") 
+                        || e.contains("Unable to resolve imports")
+                        || e.contains("forge compilation failed"))
+                    .unwrap_or(false);
+                
+                if is_compilation_error {
+                    println!("  {} Compilation error (skipped)", "⚠".yellow().bold());
+                    println!("  Time: {}ms", result.execution_time_ms);
+                } else if result.detected {
                     detected_count += 1;
                     println!("  {} Vulnerability detected", "✓".green().bold());
-                } else {
+                    println!("  Time: {}ms, Passed: {}, Failed: {}", 
+                        result.execution_time_ms, result.passed, result.failed);
+                } else if result.passed > 0 || result.failed > 0 {
                     println!("  {} No vulnerability detected", "✗".yellow());
+                    println!("  Time: {}ms, Passed: {}, Failed: {}", 
+                        result.execution_time_ms, result.passed, result.failed);
+                } else {
+                    println!("  {} No results (possible error)", "⚠".yellow());
+                    println!("  Time: {}ms", result.execution_time_ms);
                 }
-                println!("  Time: {}ms, Passed: {}, Failed: {}", 
-                    result.execution_time_ms, result.passed, result.failed);
                 results.push(result);
             }
             Err(e) => {
@@ -284,17 +312,36 @@ async fn main() -> Result<(), anyhow::Error> {
         results,
     };
     
+    // Calculate successful runs (excluding compilation errors)
+    let successful_runs_count = summary.results.iter()
+        .filter(|r| {
+            !r.error.as_ref()
+                .map(|e| e.contains("Compilation failed") 
+                    || e.contains("Unable to resolve imports")
+                    || e.contains("forge compilation failed"))
+                .unwrap_or(false)
+        })
+        .count();
+    
+    let compilation_error_count = summary.total - successful_runs_count;
+    
     // Print summary
     println!("{}", "=".repeat(70).bold());
     println!("{}", "Benchmark Summary".bold().green());
     println!("{}", "=".repeat(70).bold());
     println!("  Total contracts tested: {}", summary.total);
-    println!("  {} Vulnerabilities detected: {}", "✓".green(), summary.detected);
-    println!("  {} Vulnerabilities missed: {}", "✗".red(), summary.missed);
-    if summary.total > 0 {
-        println!("  Detection rate: {:.1}%", 
-            (summary.detected as f64 / summary.total as f64) * 100.0
+    if compilation_error_count > 0 {
+        println!("  {} Compilation errors (skipped): {}", "⚠".yellow(), compilation_error_count);
+    }
+    if successful_runs_count > 0 {
+        println!("  {} Successfully fuzzed: {}", "✓".green(), successful_runs_count);
+        println!("  {} Vulnerabilities detected: {}", "✓".green(), summary.detected);
+        println!("  {} Vulnerabilities missed: {}", "✗".red(), summary.missed);
+        println!("  Detection rate: {:.1}% (of successfully fuzzed contracts)", 
+            (summary.detected as f64 / successful_runs_count as f64) * 100.0
         );
+    } else {
+        println!("  {} No contracts successfully fuzzed", "✗".red());
     }
     println!("  Total execution time: {:.2}s", summary.total_execution_time_ms as f64 / 1000.0);
     

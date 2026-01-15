@@ -7,3 +7,6 @@ dist
 
 .env
 .fuzz
+
+benchmark-results.json
+Horizen-POC/benchmarks/benchmark-results.json
