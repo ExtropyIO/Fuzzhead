@@ -49,39 +49,39 @@ impl SolidityFuzzer {
             };
             
             // Deploy contract to Anvil fork
-            // Check if contract has constructor parameters
+                // Check if contract has constructor parameters
             let constructor_args = if contract_abi.constructor().is_some() && !contract_abi.constructor().unwrap().inputs.is_empty() {
                 println!("- Constructor requires {} parameter(s)", contract_abi.constructor().unwrap().inputs.len());
-                
-                // Prompt user for constructor arguments
+                    
+                    // Prompt user for constructor arguments
                 match crate::constructor::prompt_for_constructor_args(&contract_abi, &contract.name) {
-                    Ok(tokens) => {
+                        Ok(tokens) => {
                         match contract_abi.constructor().unwrap().encode_input(contract_bytecode.clone(), &tokens) {
-                            Ok(encoded_deployment) => {
+                                Ok(encoded_deployment) => {
                                 let constructor_args_bytes = &encoded_deployment[contract_bytecode.len()..];
-                                println!("- Constructor arguments encoded ({} bytes)", constructor_args_bytes.len());
-                                Some(constructor_args_bytes.to_vec())
-                            }
-                            Err(e) => {
+                                    println!("- Constructor arguments encoded ({} bytes)", constructor_args_bytes.len());
+                                    Some(constructor_args_bytes.to_vec())
+                                }
+                                Err(e) => {
                                 eprintln!("❌ Failed to encode constructor arguments: {}", e);
                                 return Err(anyhow::anyhow!("Constructor argument encoding failed: {}", e));
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
+                        Err(e) => {
                         eprintln!("❌ Failed to get constructor arguments: {}", e);
                         return Err(anyhow::anyhow!("Constructor argument input failed: {}", e));
+                        }
                     }
-                }
-            } else {
-                None
-            };
-            
+                } else {
+                    None
+                };
+                
             match self.anvil_executor.deploy_contract(&contract.name, &contract_bytecode, constructor_args.as_deref()).await {
-                Ok(addr) => {
-                    println!("- Contract deployed at: {}", addr);
-                }
-                Err(e) => {
+                    Ok(addr) => {
+                        println!("- Contract deployed at: {}", addr);
+                    }
+                    Err(e) => {
                     eprintln!("❌ Deployment failed: {}", e);
                     return Err(anyhow::anyhow!("Contract deployment failed: {}", e));
                 }
