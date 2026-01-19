@@ -1,15 +1,12 @@
 use anyhow::{Context, Result};
 use std::process::Command;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use serde_json::Value;
 use tracing::{debug, warn};
 use ethers::abi::Abi;
 
-/// Contract compiler using forge or solc
 pub struct ContractCompiler {
-    /// Path to forge executable (if available)
     forge_path: Option<String>,
-    /// Path to solc executable (if available)
     solc_path: Option<String>,
 }
 
@@ -37,18 +34,208 @@ impl ContractCompiler {
     }
     
     pub fn compile_contract_with_abi(&self, source_path: &Path, contract_name: &str) -> Result<(Vec<u8>, Abi)> {
-        // Prefer forge if available (Foundry's compiler)
         if let Some(ref forge) = self.forge_path {
+            if let Some(project_root) = Self::find_foundry_project_root(source_path) {
+                debug!("Found Foundry project root at: {:?}", project_root);
+                return self.compile_with_forge_inplace(source_path, contract_name, &project_root, forge);
+            }
+            // Fall back to temp project approach
             return self.compile_with_forge_full(source_path, contract_name, forge);
         }
         
-        // Fall back to solc
         if let Some(ref solc) = self.solc_path {
             return self.compile_with_solc_full(source_path, contract_name, solc);
         }
         
         Err(anyhow::anyhow!(
             "No compiler available. Install Foundry (forge) or solc."
+        ))
+    }
+    
+    fn find_foundry_project_root(source_path: &Path) -> Option<PathBuf> {
+        let mut current = if source_path.is_file() {
+            source_path.parent()?
+        } else {
+            source_path
+        };
+        
+        loop {
+            let foundry_toml = current.join("foundry.toml");
+            let remappings_txt = current.join("remappings.txt");
+            
+            if foundry_toml.exists() || remappings_txt.exists() {
+                return Some(current.to_path_buf());
+            }
+            
+            // Move up one directory
+            match current.parent() {
+                Some(parent) => current = parent,
+                None => break,
+            }
+        }
+        
+        None
+    }
+    
+    /// Compile contract in-place from a Foundry project root to preserve remappings, libs, and foundry.toml configuration
+    fn compile_with_forge_inplace(
+        &self,
+        source_path: &Path,
+        contract_name: &str,
+        project_root: &Path,
+        forge_path: &str,
+    ) -> Result<(Vec<u8>, Abi)> {
+        debug!("Compiling {} with forge in-place from project root: {:?}", contract_name, project_root);
+        
+        // Ensure source_path is relative to project_root or absolute
+        let source_path_abs = if source_path.is_absolute() {
+            source_path.to_path_buf()
+        } else {
+            // If relative, try to resolve it relative to project_root
+            project_root.join(source_path)
+        };
+        
+        // Verify the source file exists
+        if !source_path_abs.exists() {
+            return Err(anyhow::anyhow!(
+                "Source file not found: {:?} (resolved from {:?} in project {:?})",
+                source_path_abs,
+                source_path,
+                project_root
+            ));
+        }
+        
+        let relative_source = source_path_abs
+            .strip_prefix(project_root)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| source_path_abs.to_string_lossy().to_string());
+        
+        let output = Command::new(forge_path)
+            .args(&["build", "--force", &relative_source])
+            .current_dir(project_root)
+            .output()
+            .context("Failed to execute forge build")?;
+        
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            return Err(anyhow::anyhow!(
+                "Forge compilation failed (project root: {:?}):\nSTDOUT: {}\nSTDERR: {}",
+                project_root,
+                stdout,
+                stderr
+            ));
+        }
+        
+        let file_stem = source_path_abs.file_stem()
+            .and_then(|s| s.to_str())
+            .context("Invalid source file name")?;
+        
+        let artifact_path = if let Ok(relative_path) = source_path_abs.strip_prefix(project_root) {
+            let path_after_src = if relative_path.starts_with("src/") {
+                relative_path.strip_prefix("src/").unwrap_or(relative_path)
+            } else if relative_path.starts_with("src\\") {
+                relative_path.strip_prefix("src\\").unwrap_or(relative_path)
+            } else {
+                relative_path
+            };
+            
+            project_root
+                .join("out")
+                .join(path_after_src.parent().unwrap_or(Path::new("")))
+                .join(format!("{}.sol", file_stem))
+                .join(format!("{}.json", contract_name))
+        } else {
+            // Fallback: try direct path
+            project_root
+                .join("out")
+                .join(format!("{}.sol", file_stem))
+                .join(format!("{}.json", contract_name))
+        };
+        
+        let artifact_path = if !artifact_path.exists() {
+            let out_dir = project_root.join("out");
+            if out_dir.exists() {
+                Self::find_artifact_in_out(&out_dir, file_stem, contract_name)?
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Compiled artifact not found at: {:?} and out/ directory does not exist",
+                    artifact_path
+                ));
+            }
+        } else {
+            artifact_path
+        };
+        
+        let artifact_content = std::fs::read_to_string(&artifact_path)?;
+        let artifact: Value = serde_json::from_str(&artifact_content)
+            .context("Failed to parse forge artifact JSON")?;
+        
+        let bytecode_hex = artifact
+            .get("bytecode")
+            .and_then(|v| v.get("object"))
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                artifact.get("bytecode").and_then(|v| v.as_str())
+            })
+            .context("Bytecode not found in artifact")?;
+        
+        let abi_value = artifact
+            .get("abi")
+            .context("ABI not found in artifact")?;
+        
+        let abi: Abi = serde_json::from_value(abi_value.clone())
+            .context("Failed to parse ABI")?;
+        
+        let bytecode = hex::decode(bytecode_hex.strip_prefix("0x").unwrap_or(bytecode_hex))?;
+        
+        Ok((bytecode, abi))
+    }
+    
+    fn find_artifact_in_out(out_dir: &Path, file_stem: &str, contract_name: &str) -> Result<PathBuf> {
+        use std::fs;
+        
+        let candidate = out_dir
+            .join(format!("{}.sol", file_stem))
+            .join(format!("{}.json", contract_name));
+        
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+        
+        if out_dir.is_dir() {
+            for entry in fs::read_dir(out_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                
+                if path.is_dir() {
+                    if let Ok(found) = Self::find_artifact_in_out(&path, file_stem, contract_name) {
+                        return Ok(found);
+                    }
+                } else if path.is_file() {
+                    if path.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n == format!("{}.json", contract_name))
+                        .unwrap_or(false)
+                    {
+                        if path.parent()
+                            .and_then(|p| p.file_name())
+                            .and_then(|n| n.to_str())
+                            .map(|n| n == format!("{}.sol", file_stem))
+                            .unwrap_or(false)
+                        {
+                            return Ok(path);
+                        }
+                    }
+                }
+            }
+        }
+        
+        Err(anyhow::anyhow!(
+            "Contract artifact not found: {}.sol/{}.json in {:?}",
+            file_stem,
+            contract_name,
+            out_dir
         ))
     }
     

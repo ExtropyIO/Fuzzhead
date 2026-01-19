@@ -10,7 +10,6 @@ use std::time::Instant;
 struct BenchmarkResult {
     contract: String,
     contract_path: String,
-    vulnerability_type: String,
     detected: bool,
     execution_time_ms: u64,
     error: Option<String>,
@@ -54,35 +53,6 @@ fn find_solidity_contracts(bench_dir: &Path) -> Vec<PathBuf> {
     
     contracts.sort();
     contracts
-}
-
-fn get_vulnerability_type(contract_path: &Path) -> String {
-    let path_str = contract_path.to_string_lossy().to_lowercase();
-    let filename = contract_path.file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_lowercase();
-    
-    // Extract vulnerability type from path or filename
-    if path_str.contains("reentrancy") || filename.contains("reentrancy") {
-        "reentrancy".to_string()
-    } else if path_str.contains("overflow") || filename.contains("overflow") {
-        "integer_overflow".to_string()
-    } else if path_str.contains("access") || filename.contains("access") {
-        "access_control".to_string()
-    } else if path_str.contains("unchecked") || filename.contains("unchecked") {
-        "unchecked_call".to_string()
-    } else if path_str.contains("flashloan") || filename.contains("flashloan") {
-        "flashloan".to_string()
-    } else if path_str.contains("price") || filename.contains("price") {
-        "price_manipulation".to_string()
-    } else if path_str.contains("logic") || filename.contains("logic") {
-        "logic_flaw".to_string()
-    } else if path_str.contains("oracle") || filename.contains("oracle") {
-        "bad_oracle".to_string()
-    } else {
-        "unknown".to_string()
-    }
 }
 
 async fn run_fuzzer_on_contract(
@@ -141,18 +111,13 @@ async fn run_fuzzer_on_contract(
         }
     }
     
-    // Only mark as detected if:
+    // Mark as detected if:
     // 1. Fuzzer ran successfully (not a compilation error)
     // 2. We have actual fuzzing results (passed + failed > 0)
     // 3. There are failed test cases (indicating potential vulnerabilities)
     if !is_compilation_error && (passed > 0 || failed > 0) {
-        // Look for indicators of vulnerability detection in successful runs
-        if failed > 0 
-            || stdout.contains("FAILED") 
-            || stdout.contains("vulnerability")
-            || stdout.contains("revert")
-            || stdout.contains("reentrancy")
-            || stdout.contains("access control") {
+        // Detection is based solely on failed test cases from fuzzing
+        if failed > 0 || stdout.contains("FAILED") {
             detected = true;
         }
     }
@@ -168,7 +133,6 @@ async fn run_fuzzer_on_contract(
     Ok(BenchmarkResult {
         contract: contract_name,
         contract_path: contract_path.to_string_lossy().to_string(),
-        vulnerability_type: get_vulnerability_type(contract_path),
         detected,
         execution_time_ms: execution_time,
         error,
@@ -288,7 +252,6 @@ async fn main() -> Result<(), anyhow::Error> {
                         .to_string_lossy()
                         .to_string(),
                     contract_path: contract.to_string_lossy().to_string(),
-                    vulnerability_type: get_vulnerability_type(contract),
                     detected: false,
                     execution_time_ms: 0,
                     error: Some(e.to_string()),

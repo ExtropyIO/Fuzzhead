@@ -114,7 +114,6 @@ The benchmark suite generates:
        {
          "contract": "unverified_35bc_exp.sol",
          "contract_path": "../../benchmarks/defihacklabs/src/test/2025-02/unverified_35bc_exp.sol",
-         "vulnerability_type": "reentrancy",
          "detected": true,
          "execution_time_ms": 1200,
          "fuzz_runs": 50,
