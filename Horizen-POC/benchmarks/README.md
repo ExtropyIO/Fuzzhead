@@ -56,22 +56,22 @@ make test-single CONTRACT=../../benchmarks/defihacklabs/src/test/2025-02/unverif
 
 ## Makefile Commands
 
-| Command | Description |
-|---------|-------------|
-| `make build` | Build the fuzzer in release mode |
-| `make run` | Run full benchmark suite |
-| `make test-limit MAX_CONTRACTS=N` | Test first N contracts |
-| `make test-single CONTRACT=path` | Test a specific contract |
-| `make clean` | Remove benchmark results |
-| `make help` | Show all available commands |
+| Command                           | Description                      |
+| --------------------------------- | -------------------------------- |
+| `make build`                      | Build the fuzzer in release mode |
+| `make run`                        | Run full benchmark suite         |
+| `make test-limit MAX_CONTRACTS=N` | Test first N contracts           |
+| `make test-single CONTRACT=path`  | Test a specific contract         |
+| `make clean`                      | Remove benchmark results         |
+| `make help`                       | Show all available commands      |
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FORK_URL` | `http://localhost:8545` | Anvil RPC URL |
-| `TEST_CASES` | `50` | Number of fuzz iterations per contract |
-| `MAX_CONTRACTS` | (unlimited) | Limit number of contracts to test |
+| Variable        | Default                 | Description                            |
+| --------------- | ----------------------- | -------------------------------------- |
+| `FORK_URL`      | `http://localhost:8545` | Anvil RPC URL                          |
+| `TEST_CASES`    | `50`                    | Number of fuzz iterations per contract |
+| `MAX_CONTRACTS` | (unlimited)             | Limit number of contracts to test      |
 
 ## Examples
 
