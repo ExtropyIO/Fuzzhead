@@ -27,8 +27,28 @@ struct BenchmarkSummary {
     results: Vec<BenchmarkResult>,
 }
 
-fn find_solidity_contracts(bench_dir: &Path) -> Vec<PathBuf> {
+/// Check if a contract file is a test contract (not suitable for fuzzing)
+fn is_test_contract(path: &Path) -> bool {
+    let path_str = path.to_string_lossy();
+    let file_name = path.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    
+    // Skip known test/helper files
+    if path_str.contains("/lib/") 
+        || path_str.contains("interface.sol")
+        || path_str.contains("basetest.sol")
+        || path_str.contains("tokenhelper.sol")
+        || path_str.contains("StableMath.sol") {
+        return true;
+    }
+    
+    false
+}
+
+fn find_solidity_contracts(bench_dir: &Path) -> (Vec<PathBuf>, usize) {
     let mut contracts = Vec::new();
+    let mut skipped_count = 0;
     
     for entry in WalkDir::new(bench_dir)
         .into_iter()
@@ -40,19 +60,18 @@ fn find_solidity_contracts(bench_dir: &Path) -> Vec<PathBuf> {
         })
     {
         let path = entry.path();
-        // Skip library files and interfaces
-        let path_str = path.to_string_lossy();
-        if !path_str.contains("/lib/") 
-            && !path_str.contains("interface.sol")
-            && !path_str.contains("basetest.sol")
-            && !path_str.contains("tokenhelper.sol")
-            && !path_str.contains("StableMath.sol") {
-            contracts.push(path.to_path_buf());
+        
+        // Skip test contracts
+        if is_test_contract(path) {
+            skipped_count += 1;
+            continue;
         }
+        
+        contracts.push(path.to_path_buf());
     }
     
     contracts.sort();
-    contracts
+    (contracts, skipped_count)
 }
 
 async fn run_fuzzer_on_contract(
@@ -179,16 +198,22 @@ async fn main() -> Result<(), anyhow::Error> {
         return Err(anyhow::anyhow!("Fuzzer binary not found"));
     }
     
-    // Find all Solidity contracts
+    // Find all Solidity contracts (excluding test contracts)
     println!("{}", "Scanning for benchmark contracts...".yellow());
-    let contracts = find_solidity_contracts(bench_dir);
+    println!("  Filtering out test contracts (forge-std/Test.sol, test functions, etc.)...");
+    let (contracts, skipped_count) = find_solidity_contracts(bench_dir);
     
-    if contracts.is_empty() {
-        eprintln!("{}", "No Solidity contracts found in DeFiHackLabs directory".red());
-        return Err(anyhow::anyhow!("No contracts found"));
+    if skipped_count > 0 {
+        println!("  {} Test contracts skipped: {}", "ℹ".blue(), skipped_count);
     }
     
-    println!("  Found {} contracts\n", contracts.len().to_string().cyan());
+    if contracts.is_empty() {
+        eprintln!("{}", "No fuzzable contracts found in DeFiHackLabs directory".red());
+        eprintln!("  All contracts appear to be test contracts or helper files.");
+        return Err(anyhow::anyhow!("No fuzzable contracts found"));
+    }
+    
+    println!("  {} Fuzzable contracts found\n", contracts.len().to_string().cyan());
     
     // Limit number of contracts if specified
     let max_contracts: Option<usize> = std::env::var("MAX_CONTRACTS")
@@ -308,10 +333,9 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     println!("  Total execution time: {:.2}s", summary.total_execution_time_ms as f64 / 1000.0);
     
-    // Save results to JSON
-    let results_file = "benchmark-results.json";
-    fs::write(results_file, serde_json::to_string_pretty(&summary)?)?;
-    println!("\n  Results saved to: {}", results_file.cyan());
+    // let results_file = "benchmark-results.json";
+    // fs::write(results_file, serde_json::to_string_pretty(&summary)?)?;
+    // println!("\n  Results saved to: {}", results_file.cyan());
     
     Ok(())
 }
