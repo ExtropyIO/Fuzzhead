@@ -390,11 +390,28 @@ impl AnvilForkExecutor {
                                 &call_data_hex,
                             ).await.unwrap_or_else(|_| "Unknown revert reason".to_string());
                             
+                            // Extract just the revert reason, removing redundant prefixes and newlines
+                            let clean_reason = if revert_reason.contains("execution reverted:") {
+                                revert_reason
+                                    .split("execution reverted:")
+                                    .nth(1)
+                                    .map(|s| s.trim().replace('\n', " ").replace('\r', " ").trim().to_string())
+                                    .unwrap_or_else(|| revert_reason.replace('\n', " ").replace('\r', " ").trim().to_string())
+                            } else if revert_reason.contains("RPC error:") {
+                                revert_reason
+                                    .split("RPC error:")
+                                    .nth(1)
+                                    .map(|s| s.trim().replace('\n', " ").replace('\r', " ").trim().to_string())
+                                    .unwrap_or_else(|| revert_reason.replace('\n', " ").replace('\r', " ").trim().to_string())
+                            } else {
+                                revert_reason.replace('\n', " ").replace('\r', " ").trim().to_string()
+                            };
+                            
                             Ok(MethodExecutionResult {
                                 success: false,
                                 gas_used,
                                 return_data: vec![],
-                                error: Some(format!("Transaction reverted: {}", revert_reason)),
+                                error: Some(clean_reason),
                             })
                         }
                     }
@@ -431,7 +448,6 @@ impl AnvilForkExecutor {
         &self.current_sender
     }
     
-    /// Get all available accounts
     pub fn accounts(&self) -> &[String] {
         &self.accounts
     }
@@ -459,12 +475,20 @@ impl AnvilForkExecutor {
         match Self::rpc_call(&self.client, &self.rpc_url, "eth_call", params).await {
             Ok(_) => Ok("No revert reason available".to_string()),
             Err(e) => {
-                // The error message might contain the revert reason
+                // Extract the revert reason from the error message
                 let error_msg = e.to_string();
-                if error_msg.contains("revert") || error_msg.contains("Revert") {
-                    Ok(error_msg)
+                let clean_msg = error_msg.replace('\n', " ").replace('\r', " ").trim().to_string();
+                
+                if clean_msg.contains("execution reverted:") {
+                    if let Some(reason) = clean_msg.split("execution reverted:").nth(1) {
+                        Ok(reason.trim().to_string())
+                    } else {
+                        Ok(clean_msg)
+                    }
+                } else if clean_msg.contains("revert") || clean_msg.contains("Revert") {
+                    Ok(clean_msg)
                 } else {
-                    Ok(format!("Reverted: {}", error_msg))
+                    Ok(format!("Reverted: {}", clean_msg))
                 }
             }
         }
