@@ -431,6 +431,11 @@ impl AnvilForkExecutor {
         &self.current_sender
     }
     
+    /// Get all available accounts
+    pub fn accounts(&self) -> &[String] {
+        &self.accounts
+    }
+    
     /// Get the RPC URL
     pub fn rpc_url(&self) -> &str {
         &self.rpc_url

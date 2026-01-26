@@ -110,6 +110,10 @@ impl SolidityFuzzer {
             println!("- Starting fuzzing of {} method(s)...", methods_to_test.len());
             println!();
 
+            // Get available accounts for sender rotation (clone to avoid borrow conflicts)
+            let accounts: Vec<String> = self.anvil_executor.accounts().to_vec();
+            let num_accounts = accounts.len();
+            
             let method_count = methods_to_test.len();
             for method in methods_to_test {
                 if method.parameters.is_empty() {
@@ -133,6 +137,17 @@ impl SolidityFuzzer {
                         method_skipped += 1;
                         continue;
                     }
+
+                    // Rotate sender to test access control
+                    // Bias towards non-owner accounts (70% chance) to catch access control issues
+                    let sender_index = if num_accounts > 1 && self.rng.gen_range(0..100) < 70 {
+                        // Use a non-owner account (index 1 or higher)
+                        self.rng.gen_range(1..num_accounts)
+                    } else {
+                        // Use owner account (index 0)
+                        0
+                    };
+                    self.anvil_executor.set_sender(sender_index);
 
                     // Execute on Anvil fork - fail loudly if execution fails
                     let result = self.execute_test_case_evm(&method.name, &mock_args, &contract).await;
