@@ -117,7 +117,7 @@ Before running the fuzzer, ensure you have the following installed:
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/your-org/fuzzhead.git
-   cd fuzzhead/Horizen-POC
+   cd fuzzhead/Base-POC
    ```
 
 2. **Build the fuzzer:**
@@ -185,7 +185,7 @@ anvil --fork-url https://sepolia.base.org
 
 **2. Run the fuzzer:**
 ```bash
-cd Horizen-POC
+cd Base-POC
 cargo run --release -- --input test-contracts/VaultContract.sol --test-cases 50
 ```
 
@@ -272,7 +272,7 @@ Fuzzhead's detection capabilities are validated against the **[DeFiHackLabs](htt
 
 2. **Build the fuzzer:**
    ```bash
-   cd Horizen-POC
+   cd Base-POC
    cargo build --release
    ```
 
@@ -305,7 +305,7 @@ Fuzzhead's detection capabilities are validated against the **[DeFiHackLabs](htt
 
 **Note:** The high number of compilation errors is expected, as many contracts in the DeFiHackLabs dataset have dependencies on other contracts in the project or require specific Foundry project configurations. Only contracts that can be compiled and deployed standalone are successfully fuzzed.
 
-For detailed benchmark documentation, see `Horizen-POC/benchmarks/README.md`.
+For detailed benchmark documentation, see `Base-POC/benchmarks/README.md`.
 
 ## Live Demo: Base Sepolia Deployment
 
