@@ -35,12 +35,22 @@ impl ContractCompiler {
     
     pub fn compile_contract_with_abi(&self, source_path: &Path, contract_name: &str) -> Result<(Vec<u8>, Abi)> {
         if let Some(ref forge) = self.forge_path {
-            if let Some(project_root) = Self::find_foundry_project_root(source_path) {
+            // Make path absolute if it's relative
+            let abs_source_path = if source_path.is_absolute() {
+                source_path.to_path_buf()
+            } else {
+                std::env::current_dir()?
+                    .join(source_path)
+                    .canonicalize()
+                    .unwrap_or_else(|_| std::env::current_dir().unwrap().join(source_path))
+            };
+            
+            if let Some(project_root) = Self::find_foundry_project_root(&abs_source_path) {
                 debug!("Found Foundry project root at: {:?}", project_root);
-                return self.compile_with_forge_inplace(source_path, contract_name, &project_root, forge);
+                return self.compile_with_forge_inplace(&abs_source_path, contract_name, &project_root, forge);
             }
             // Fall back to temp project approach
-            return self.compile_with_forge_full(source_path, contract_name, forge);
+            return self.compile_with_forge_full(&abs_source_path, contract_name, forge);
         }
         
         if let Some(ref solc) = self.solc_path {
