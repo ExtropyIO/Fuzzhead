@@ -125,7 +125,7 @@ Before running the fuzzer, ensure you have the following installed:
    cargo build --release
    ```
 
-   The binary will be available at `target/release/horizen-solidity-fuzzer`
+   The binary will be available at `target/release/base-solidity-fuzzer`
 
 ### Running the Fuzzer
 

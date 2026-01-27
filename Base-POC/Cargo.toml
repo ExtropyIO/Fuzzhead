@@ -1,8 +1,8 @@
 [package]
-name = "horizen-solidity-fuzzer"
+name = "base-solidity-fuzzer"
 version = "0.1.0"
 edition = "2021"
-default-run = "horizen-solidity-fuzzer"
+default-run = "base-solidity-fuzzer"
 
 [dependencies]
 # Core dependencies

@@ -175,7 +175,7 @@ async fn main() -> Result<(), anyhow::Error> {
     
     // Paths
     let bench_dir = Path::new("../../benchmarks/defihacklabs/src/test");
-    let fuzzer_binary = Path::new("../target/release/horizen-solidity-fuzzer");
+    let fuzzer_binary = Path::new("../target/release/base-solidity-fuzzer");
     let fork_url = std::env::var("FORK_URL").unwrap_or_else(|_| "http://localhost:8545".to_string());
     let test_cases: usize = std::env::var("TEST_CASES")
         .unwrap_or_else(|_| "50".to_string())

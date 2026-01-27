@@ -12,8 +12,8 @@ pub mod contract_compiler;
 pub mod constructor;
 
 #[derive(Parser)]
-#[command(name = "horizen-solidity-fuzzer")]
-#[command(about = "A Solidity fuzzer for Horizen smart contracts")]
+#[command(name = "base-solidity-fuzzer")]
+#[command(about = "A Solidity fuzzer for Base smart contracts")]
 #[command(version)]
 struct Cli {
     /// Path to the Solidity contract file or directory

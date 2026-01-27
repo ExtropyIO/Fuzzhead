@@ -1,7 +1,7 @@
 .PHONY: build run clean help test-single test-limit
 
 # Configuration
-FUZZER_BINARY = ../target/release/horizen-solidity-fuzzer
+FUZZER_BINARY = ../target/release/base-solidity-fuzzer
 BENCH_DIR = ../../benchmarks/defihacklabs
 FORK_URL ?= http://localhost:8545
 TEST_CASES ?= 50
