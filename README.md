@@ -194,39 +194,43 @@ cargo run --release -- --input test-contracts/VaultContract.sol --test-cases 50
 ```
 Fuzzing contract: VaultContract
 --------------------------------------------------
-- Contract compiled successfully (1234 bytes)
+- Contract compiled successfully (4557 bytes)
 - Constructor requires 2 parameter(s)
+
 ➤ Deployment requires arguments for 'VaultContract':
-Enter value for _minDeposit (uint256): 100
-Enter value for _maxWithdrawPerDay (uint256): 1000
+✔ Enter value for _minDeposit (uint256) · 100000000000000000
+✔ Enter value for _maxWithdrawPerDay (uint256) · 1000000000000000000
 ✔ Arguments captured successfully!
 - Constructor arguments encoded (64 bytes)
 - Contract deployed at: 0x5FbDB2315678afecb367f032d93F642f64180aa3
-- Starting fuzzing of 5 method(s)...
+- Starting fuzzing of 7 method(s)...
 
 - Fuzzing method: deposit
-  ❌ VaultContract.deposit(50) FAILED on iteration 3: Transaction reverted: Below minimum deposit
-  ❌ VaultContract.deposit(0x0000...0000) FAILED on iteration 12: Transaction reverted: Below minimum deposit
+  ❌ VaultContract.deposit(42525) FAILED on iteration 5: Below minimum deposit (code: 3)
+  ❌ VaultContract.deposit(3724390) FAILED on iteration 7: Below minimum deposit (code: 3)
 
 - Fuzzing method: withdraw
-  ❌ VaultContract.withdraw(5000) FAILED on iteration 7: Transaction reverted: Insufficient balance
-  ❌ VaultContract.withdraw(1500) FAILED on iteration 23: Transaction reverted: Exceeds daily limit
+  ❌ VaultContract.withdraw(31) FAILED on iteration 1: Insufficient balance (code: 3)
+  ❌ VaultContract.withdraw(1384238) FAILED on iteration 5: Insufficient balance (code: 3)
+  ❌ VaultContract.withdraw(62000000000000000000) FAILED on iteration 16: Exceeds daily limit (code: 3)
 
 - Fuzzing method: setWhitelist
-  ❌ VaultContract.setWhitelist(0x7099...79C8, true) FAILED on iteration 15: Transaction reverted: Not owner
+  ❌ VaultContract.setWhitelist(0x000...00, true) FAILED on iteration 2: Not owner (code: 3)
+  ❌ VaultContract.setWhitelist(0x000...06, false) FAILED on iteration 3: Not owner (code: 3)
 
 - Fuzzing method: setPaused
-  ❌ VaultContract.setPaused(false) FAILED on iteration 8: Transaction reverted: Not owner
+  ❌ VaultContract.setPaused(false) FAILED on iteration 1: Not owner (code: 3)
+  ❌ VaultContract.setPaused(true) FAILED on iteration 2: Not owner (code: 3)
 
-- Fuzzing method: updateLimits
-  ❌ VaultContract.updateLimits(500, 2000) FAILED on iteration 2: Transaction reverted: Not owner
+- Skipping method: updateLimits (no input parameters)
+- Fuzzing method: getBalance
+- Skipping method: getRemainingDailyLimit (no input parameters)
 
 🏁 Fuzzing complete:
-   ✅ 235 runs passed
-   ❌ 15 runs failed
-   ⏭️  0 runs skipped (unsupported parameter types)
-   📊 Total: 250 runs across 5 method(s)
-   🔄 50 iterations per method
+   ✅ 56 runs passed
+   ❌ 44 runs failed
+   📊 Total: 100 runs across 7 method(s)
+   🔄 20 iterations per method
 ```
 
 ### Understanding the Output
