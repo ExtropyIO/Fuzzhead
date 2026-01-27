@@ -49,39 +49,39 @@ impl SolidityFuzzer {
             };
             
             // Deploy contract to Anvil fork
-            // Check if contract has constructor parameters
+                // Check if contract has constructor parameters
             let constructor_args = if contract_abi.constructor().is_some() && !contract_abi.constructor().unwrap().inputs.is_empty() {
                 println!("- Constructor requires {} parameter(s)", contract_abi.constructor().unwrap().inputs.len());
-                
-                // Prompt user for constructor arguments
+                    
+                    // Prompt user for constructor arguments
                 match crate::constructor::prompt_for_constructor_args(&contract_abi, &contract.name) {
-                    Ok(tokens) => {
+                        Ok(tokens) => {
                         match contract_abi.constructor().unwrap().encode_input(contract_bytecode.clone(), &tokens) {
-                            Ok(encoded_deployment) => {
+                                Ok(encoded_deployment) => {
                                 let constructor_args_bytes = &encoded_deployment[contract_bytecode.len()..];
-                                println!("- Constructor arguments encoded ({} bytes)", constructor_args_bytes.len());
-                                Some(constructor_args_bytes.to_vec())
-                            }
-                            Err(e) => {
+                                    println!("- Constructor arguments encoded ({} bytes)", constructor_args_bytes.len());
+                                    Some(constructor_args_bytes.to_vec())
+                                }
+                                Err(e) => {
                                 eprintln!("❌ Failed to encode constructor arguments: {}", e);
                                 return Err(anyhow::anyhow!("Constructor argument encoding failed: {}", e));
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
+                        Err(e) => {
                         eprintln!("❌ Failed to get constructor arguments: {}", e);
                         return Err(anyhow::anyhow!("Constructor argument input failed: {}", e));
+                        }
                     }
-                }
-            } else {
-                None
-            };
-            
+                } else {
+                    None
+                };
+                
             match self.anvil_executor.deploy_contract(&contract.name, &contract_bytecode, constructor_args.as_deref()).await {
-                Ok(addr) => {
-                    println!("- Contract deployed at: {}", addr);
-                }
-                Err(e) => {
+                    Ok(addr) => {
+                        println!("- Contract deployed at: {}", addr);
+                    }
+                    Err(e) => {
                     eprintln!("❌ Deployment failed: {}", e);
                     return Err(anyhow::anyhow!("Contract deployment failed: {}", e));
                 }
@@ -110,6 +110,9 @@ impl SolidityFuzzer {
             println!("- Starting fuzzing of {} method(s)...", methods_to_test.len());
             println!();
 
+            let accounts: Vec<String> = self.anvil_executor.accounts().to_vec();
+            let num_accounts = accounts.len();
+            
             let method_count = methods_to_test.len();
             for method in methods_to_test {
                 if method.parameters.is_empty() {
@@ -133,6 +136,15 @@ impl SolidityFuzzer {
                         method_skipped += 1;
                         continue;
                     }
+
+                    // Rotate sender to test access control
+                    // Bias towards non-owner accounts (70% chance) to catch access control issues
+                    let sender_index = if num_accounts > 1 && self.rng.gen_range(0..100) < 70 {
+                        self.rng.gen_range(1..num_accounts)
+                    } else {
+                        0
+                    };
+                    self.anvil_executor.set_sender(sender_index);
 
                     // Execute on Anvil fork - fail loudly if execution fails
                     let result = self.execute_test_case_evm(&method.name, &mock_args, &contract).await;

@@ -1,0 +1,3 @@
+[submodule "benchmarks/defihacklabs"]
+	path = benchmarks/defihacklabs
+	url = https://github.com/SunWeb3Sec/DeFiHackLabs

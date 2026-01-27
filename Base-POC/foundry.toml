@@ -1,0 +1,12 @@
+[profile.default]
+src = 'test-contracts'
+out = 'out'
+libs = ['lib']
+evm_version = 'shanghai'
+script = 'script'
+
+[rpc_endpoints]
+base_sepolia = "https://sepolia.base.org"
+
+[etherscan]
+base_sepolia = { key = "${BASESCAN_API_KEY}" }
